@@ -16,15 +16,14 @@ class OrbitProfile{
     required this.birth_month,
     required this.birth_day
   });
-
   String get zodiac => ZodiacService.fromBirthday(birth_month, birth_day);
 
   Map<String, dynamic> toJson() => {
     'username': username,
     'gender': gender,
-    'originSector': origin_sector,
-    'birthMonth': birth_month,
-    'birthDay': birth_day,
+    'origin_sector': origin_sector,
+    'birth_month': birth_month,
+    'birth_day': birth_day,
   };
 
   factory OrbitProfile.fromJson(Map<String, dynamic> json) {
