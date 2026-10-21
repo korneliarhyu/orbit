@@ -1,6 +1,5 @@
-
 import 'dart:convert';
-
+import 'ai_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -230,11 +229,12 @@ class ChatStore extends ChangeNotifier {
   }
 
   // SEND A NEW MESSAGE
-  void sendMessage(String name, String text) {
+  Future<void> sendMessage(String name, String text) async{
     final cleanText = text.trim();
 
-    if (cleanText.isEmpty) return;
+    if (cleanText.isEmpty || _typing.contains(name)) return;
 
+    // Save player's message
     _addMessage(
       name,
       OrbitMessage(
@@ -244,28 +244,61 @@ class ChatStore extends ChangeNotifier {
       ),
     );
 
-    // Simulate an AI character typing
+    // show typing indicator
     _typing.add(name);
     notifyListeners();
 
-    Future.delayed(
-      const Duration(milliseconds: 1300),
-          () {
-        _typing.remove(name);
+    try{
+      String reply;
 
-        final reply = _demoReply(name, cleanText);
+      if (name == "Mika") {
+        debugPrint('🚀 Sending message to Mika AI...');
 
-        _addMessage(
-          name,
-          OrbitMessage(
-            text: reply,
-            isMine: false,
-            sentAt: DateTime.now(),
-          ),
-          markUnread: _activeChat != name,
+        // AI Response
+        reply = await AiService.instance.replyAsMika(cleanText);
+
+        debugPrint('✅ Mika AI response received!');
+      } else {
+        // just use dummy for other character for now
+        await Future.delayed(
+          // use wait duration to make the AI more like typing
+          const Duration(microseconds: 1300),
         );
-      },
-    );
+
+        reply = _demoReply(name, cleanText);
+      }
+      // IF AI don't response anything
+      if (reply.trim().isEmpty) {
+        throw Exception("Empty AI Response");
+      }
+
+      // Save character's reply
+      _addMessage(
+        name,
+        OrbitMessage(
+          text: reply,
+          isMine: false,
+          sentAt: DateTime.now(),
+        ),
+        markUnread: _activeChat != name,
+      );
+    } catch (e) {
+      debugPrint('❌ MIKA ERROR: $e');
+
+      // Temporary debugging message
+      _addMessage(
+        name,
+        OrbitMessage(
+          text: '⚠️ AI connection failed. Please try again.',
+          isMine: false,
+          sentAt: DateTime.now(),
+        ),
+      );
+    } finally {
+      // ALWAYS stop typing, even if AI fails
+      _typing.remove(name);
+      notifyListeners();
+    }
   }
 
   void _addMessage(
