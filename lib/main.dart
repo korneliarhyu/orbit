@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/services/chat_storage.dart';
 import 'features/splash_screen.dart';
+import 'features/profile_setup_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,7 +54,8 @@ class OrbitApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'ORBIT',
       theme: AppTheme.darkTheme,
-      home: const SplashScreen(),
+      home: const ProfileSetupScreen(),
+      // home: const SplashScreen(),
     );
   }
 }
