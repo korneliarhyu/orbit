@@ -1,9 +1,8 @@
-
 import 'package:flutter/material.dart';
-
 import '../core/theme/app_colors.dart';
 import '../core/services/orbit_profile.dart';
 import 'home_screen.dart';
+import 'profile_screen.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   const ProfileSetupScreen({super.key});
@@ -117,12 +116,15 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       if (!mounted) return;
 
       // Temporary destination until preferences screen exists.
+
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
-          builder: (_) => const HomeScreen(),
-        ),
-            (route) => false,
+          builder: (_) => const ProfileScreen(
+            showEnterButton: true,
+          ),
+        ), (route) => false,
       );
+
     } catch (error) {
       debugPrint('Profile save failed: $error');
       if (mounted) {

@@ -3,6 +3,7 @@ import '../core/theme/app_colors.dart';
 import '../core/widgets/app_chat_tile.dart';
 import '../core/services/chat_storage.dart';
 import 'chat_screen.dart';
+import 'profile_screen.dart';
 
 enum ChatFilter {
   all,
@@ -18,11 +19,19 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final TextEditingController _searchController =
-  TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
+  final PageController _pageController = PageController();
 
   ChatFilter _selectedFilter = ChatFilter.all;
   int _selectedTab = 0;
+
+  void _onTabTapped(int index) {
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
 
   // Temporary conversation data
   final List<_Conversation> _conversations = const [
@@ -72,6 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -110,47 +120,42 @@ class _HomeScreenState extends State<HomeScreen> {
 
       return bTime.compareTo(aTime);
     });
-
     return result;
   }
-
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      body: PageView(
+        controller: _pageController,
 
-      body: Stack(
+        onPageChanged: (index) {
+          setState(() {
+            _selectedTab = index;
+          });
+        },
+
         children: [
-          // Cosmic background
-          Positioned.fill(
-            child: Image.asset(
-              'lib/core/assets/bg.jpg',
-              fit: BoxFit.cover,
-            ),
+          // Tab 0: Chats asli ORBIT
+          _buildChatsPage(),
+
+          // Tab 1: Discover
+          const Center(
+            child: Text('Discover'),
           ),
 
-          // Dark overlay
-          const Positioned.fill(
-            child: ColoredBox(
-              color: Color(0xE60B0914),
-            ),
+          // Tab 2: World
+          const Center(
+            child: Text('World'),
           ),
 
-          SafeArea(
-            child: _selectedTab == 0
-                ? AnimatedBuilder(
-              animation: ChatStore.instance,
-              builder: (context, child) {
-                return _buildChatsPage();
-              },
-            )
-                : _buildPlaceholderPage(),
+          // Tab 3: Profile
+          const ProfileScreen(
+            showEnterButton: false,
           ),
-
         ],
       ),
-
       bottomNavigationBar: _buildBottomNavigation(),
     );
   }
@@ -165,15 +170,10 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(),
-
           const SizedBox(height: 24),
-
           _buildSearchBar(),
-
           const SizedBox(height: 18),
-
           _buildFilters(),
-
           const SizedBox(height: 22),
 
           const Text(
@@ -184,7 +184,6 @@ class _HomeScreenState extends State<HomeScreen> {
               fontWeight: FontWeight.bold,
             ),
           ),
-
           const SizedBox(height: 6),
 
           const Text(
@@ -194,7 +193,6 @@ class _HomeScreenState extends State<HomeScreen> {
               fontSize: 12,
             ),
           ),
-
           const SizedBox(height: 20),
 
           // Large central chat card
@@ -231,7 +229,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 itemBuilder: (context, index) {
                   final chat = conversations[index];
 
-
                   return OrbitChatTile(
                     name: chat.name,
                     message: ChatStore.instance.previewFor(chat.name),
@@ -248,7 +245,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-
           const SizedBox(height: 12),
         ],
       ),
@@ -416,7 +412,6 @@ class _HomeScreenState extends State<HomeScreen> {
             color: AppColors.softLilac,
             size: 48,
           ),
-
           SizedBox(height: 16),
 
           Text(
@@ -426,7 +421,6 @@ class _HomeScreenState extends State<HomeScreen> {
               fontWeight: FontWeight.w600,
             ),
           ),
-
           SizedBox(height: 8),
 
           Text(
@@ -502,12 +496,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildBottomNavigation() {
     return BottomNavigationBar(
       currentIndex: _selectedTab,
-
-      onTap: (index) {
-        setState(() {
-          _selectedTab = index;
-        });
-      },
+      onTap: _onTabTapped,
 
       type: BottomNavigationBarType.fixed,
 
