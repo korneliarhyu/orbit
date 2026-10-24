@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 import '../core/services/orbit_profile.dart';
-import 'home_screen.dart';
 import 'profile_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   const ProfileSetupScreen({super.key});
@@ -13,7 +13,23 @@ class ProfileSetupScreen extends StatefulWidget {
 }
 
 class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
-  final _usernameController = TextEditingController();
+  // GET USERNAME FROM FIREBASE
+  String get _registeredUsername {
+    final user = FirebaseAuth.instance.currentUser;
+
+    final displayName = user?.displayName?.trim();
+
+    if (displayName != null && displayName.isNotEmpty) {
+      return displayName;
+    }
+
+    // Fallback for our prototype's internal login identifier
+    final email = user?.email;
+    if (email != null && email.contains('@')) {
+      return email.split('@').first;
+    }
+    return '';
+  }
 
   String? _gender;
   String _origin_sector = 'Velara Expanse';
@@ -66,22 +82,21 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
   int get _maxDay => DateTime(2000, _month + 1, 0).day;
 
-  @override
-  void dispose() {
-    _usernameController.dispose();
-    super.dispose();
-  }
-
-  void _showError(String message) {
+   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
   }
 
   Future<void> _continue() async {
-    if (_saving) return;
+    final username = _registeredUsername;
 
-    final username = _usernameController.text.trim();
+    if (username.isEmpty) {
+      _showError('Please sign in again.');
+      return;
+    }
+
+    if (_saving) return;
 
     if (username.length < 3) {
       _showError('Username must have at least 3 characters.');
@@ -248,49 +263,47 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   }
 
   Widget _buildUsername() {
+     final username = _registeredUsername;
+
     return _panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _label('Username', Icons.person_outline),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _usernameController,
-            maxLength: 20,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              counterText: '',
-              hintText: 'e.g. LunaTraveler',
-              hintStyle: const TextStyle(
-                color: AppColors.textSecondary,
-              ),
-              filled: true,
-              fillColor: const Color(0xFF25203F),
-              prefixIcon: const Icon(
-                Icons.alternate_email,
-                color: AppColors.softLilac,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.border,
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.primaryPink,
-                ),
-              ),
+          Text(
+            'Hi, ${username.isEmpty ? 'Traveler' : username}! ✨',
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           const Text(
-            'Your fictional identity across the galaxy.',
+            "Let's discover who you are in this universe.",
             style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 11,
+              color: AppColors.softLilac,
+              fontSize: 13,
             ),
+          ),
+          const SizedBox(height: 14),
+          const Row(
+            children: [
+              Icon(
+                Icons.check_circle_rounded,
+                color: AppColors.success,
+                size: 17,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Your cosmic username is ready.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

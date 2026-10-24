@@ -446,52 +446,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // OTHER TABS PLACEHOLDER
-  Widget _buildPlaceholderPage() {
-    const names = [
-      'Chats',
-      'Discover',
-      'World',
-      'Profile',
-    ];
-
-    final name = names[_selectedTab];
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.auto_awesome_rounded,
-            color: AppColors.primaryPink,
-            size: 54,
-          ),
-
-          const SizedBox(height: 20),
-
-          Text(
-            name,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          const Text(
-            'Coming soon to your universe.',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // BOTTOM NAVIGATION
   Widget _buildBottomNavigation() {
     return BottomNavigationBar(
@@ -555,59 +509,4 @@ class _Conversation {
     this.isOnline = false,
     this.isGroup = false,
   });
-}
-
-// TEMPORARY CHAT DETAIL
-// Will be replaced by ChatScreen later
-class _ChatPlaceholderScreen extends StatelessWidget {
-  final String name;
-
-  const _ChatPlaceholderScreen({
-    required this.name,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-
-      appBar: AppBar(
-        title: Text(name),
-      ),
-
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.chat_bubble_outline_rounded,
-              size: 58,
-              color: AppColors.primaryPink,
-            ),
-
-            const SizedBox(height: 20),
-
-            Text(
-              'Your conversation with $name',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            const Text(
-              'Chat screen coming next!',
-              style: TextStyle(
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

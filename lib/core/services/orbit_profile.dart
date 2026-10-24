@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-// PLAYER'S IDENTITY [FICTIONAL]
-class OrbitProfile{
+// PLAYER PROFILE
+class OrbitProfile {
   final String username;
   final String gender;
   final String origin_sector;
@@ -14,9 +16,11 @@ class OrbitProfile{
     required this.gender,
     required this.origin_sector,
     required this.birth_month,
-    required this.birth_day
+    required this.birth_day,
   });
-  String get zodiac => ZodiacService.fromBirthday(birth_month, birth_day);
+
+  String get zodiac =>
+      ZodiacService.fromBirthday(birth_month, birth_day);
 
   Map<String, dynamic> toJson() => {
     'username': username,
@@ -30,10 +34,61 @@ class OrbitProfile{
     return OrbitProfile(
       username: json['username'] as String,
       gender: json['gender'] as String,
-      origin_sector: json['origin_sector'] as String,
-      birth_month: json['birth_month'] as int,
-      birth_day: json['birth_day'] as int,
+      origin_sector: (
+          json['origin_sector'] ?? json['originSector']
+      ) as String,
+      birth_month: (
+          json['birth_month'] ?? json['birthMonth']
+      ) as int,
+      birth_day: (
+          json['birth_day'] ?? json['birthDay']
+      ) as int,
     );
+  }
+}
+
+
+// STORING PLAYER'S PROFILE
+class OrbitProfileStore {
+  static final FirebaseFirestore _db =
+      FirebaseFirestore.instance;
+
+  static String get _uid {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError('Player is not logged in.');
+    }
+
+    return user.uid;
+  }
+
+  // SAVE PROFILE TO FIRESTORE
+  static Future<void> save(OrbitProfile profile) async {
+    await _db
+        .collection('players')
+        .doc(_uid)
+        .set({
+      ...profile.toJson(),
+      'zodiac': profile.zodiac,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  // LOAD PROFILE FROM FIRESTORE
+  static Future<OrbitProfile?> load() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) return null;
+
+    final snapshot = await _db
+        .collection('players')
+        .doc(user.uid)
+        .get();
+
+    final data = snapshot.data();
+    if (data == null) return null;
+    return OrbitProfile.fromJson(data);
   }
 }
 
@@ -56,29 +111,5 @@ class ZodiacService{
     return day >= startDays[month - 1]
         ? signs[month % 12]
         : signs[month - 1];
-  }
-}
-
-// LOCAL PROFILE STORAGE
-class OrbitProfileStore {
-  static const String _key = 'orbit_profile_v1';
-
-  static final SharedPreferencesAsync _prefs = SharedPreferencesAsync();
-
-  static Future<void> save(OrbitProfile profile) async {
-    await _prefs.setString(
-      _key,
-      // SAVE THE PROFILE TO DATABASE USING JSON
-      jsonEncode(profile.toJson()),
-    );
-  }
-
-  static Future<OrbitProfile?> load() async {
-    final saved = await _prefs.getString(_key);
-    if (saved == null) return null;
-    // IF PROFILE AVAILABLE, GET PROFILE
-    return OrbitProfile.fromJson(
-      Map<String, dynamic>.from(jsonDecode(saved) as Map),
-    );
   }
 }
