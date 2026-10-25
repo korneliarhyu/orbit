@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'ai_service.dart';
+import '../../core/services/ai_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

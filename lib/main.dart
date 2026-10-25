@@ -4,9 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
-import 'core/services/chat_storage.dart';
-import 'features/splash_screen.dart';
-import 'features/profile_setup_screen.dart';
+import 'features/chat/chat_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'features/auth/auth_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,21 +22,18 @@ Future<void> main() async {
     9099,
   );
 
+  // CONNECT TO FIREBASE DATABASE
+  FirebaseFirestore.instance.useFirestoreEmulator(
+    '10.0.2.2',
+    8080,
+  );
+
   // Connect to Firebase Functions Emulator
   FirebaseFunctions.instanceFor(
     region: 'asia-southeast1',
   ).useFunctionsEmulator(
     '10.0.2.2',
     5001,
-  );
-
-  // Login anonymously
-  // Temporary: reset Firebase Auth session
-  await FirebaseAuth.instance.signOut();
-  await FirebaseAuth.instance.signInAnonymously();
-
-  debugPrint(
-    'AUTH RESET OK: ${FirebaseAuth.instance.currentUser != null}',
   );
 
   // Load saved conversations
@@ -54,8 +51,8 @@ class OrbitApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'ORBIT',
       theme: AppTheme.darkTheme,
-      home: const ProfileSetupScreen(),
-      // home: const SplashScreen(),
+      // MAKE SURE THE PLAYER LOGIN
+      home: const AuthGate(),
     );
   }
 }
