@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../core/theme/app_colors.dart';
-import '../core/services/orbit_profile.dart';
-import 'profile_screen.dart';
+import '../../../core/theme/app_colors.dart';
+import 'orbit_profile.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../profile/profile_screen.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   const ProfileSetupScreen({super.key});

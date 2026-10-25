@@ -3,9 +3,63 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // PLAYER PROFILE
     match /players/{userId} {
       allow read, write: if request.auth != null
         && request.auth.uid == userId;
+    }
+
+    // MATCHED NPCs
+    match /players/{userId}/matches/{npcId} {
+      function isOwner() {
+        return request.auth != null
+          && request.auth.uid == userId;
+      }
+
+      allow read: if isOwner();
+
+      allow create: if isOwner()
+        && request.resource.data.npcId == npcId;
+
+      allow update: if isOwner()
+        && resource.data.opened == false
+        && request.resource.data.opened == true
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly(['opened']);
+
+      allow delete: if false;
+    }
+
+    // NPC CHAT MESSAGES
+    match /players/{userId}/matches/{npcId}/messages/{messageId} {
+      function isOwner() {
+        return request.auth != null
+          && request.auth.uid == userId;
+      }
+
+      function matchExists() {
+        return exists(
+          /databases/$(database)/documents/players/$(userId)/matches/$(npcId)
+        );
+      }
+
+      allow read: if isOwner() && matchExists();
+
+      allow create: if isOwner()
+        && matchExists()
+        && request.resource.data.keys().hasOnly([
+          'sender', 'text', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'sender', 'text', 'createdAt'
+        ])
+        && request.resource.data.sender == 'player'
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 1000
+        && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if false;
     }
   }
 }

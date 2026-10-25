@@ -1,11 +1,10 @@
 import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../../core/services/player_auth_service.dart';
+import 'player_auth_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../home_screen.dart';
-import '../profile_setup_screen.dart';
-import '../../core/services/orbit_profile.dart';
+import '../profile/profile_setup_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});

@@ -1,10 +1,10 @@
-
 import 'package:flutter/material.dart';
-
-import '../core/services/orbit_profile.dart';
-import '../core/theme/app_colors.dart';
-import 'home_screen.dart';
+import 'orbit_profile.dart';
+import '../auth/player_auth_service.dart';
+import '../../core/theme/app_colors.dart';
+import '../home_screen.dart';
 import 'profile_setup_screen.dart';
+import '../auth/auth_gate.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -61,6 +61,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _profileFuture = OrbitProfileStore.load();
+  }
+
+  // LOGOUT NICH
+  Future<void> orbitLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1B1430),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text(
+            'Leaving the galaxy?',
+            style: TextStyle(color: Color(0xFFF8F6FC)),
+          ),
+          content: const Text(
+            'You can always return to your universe.',
+            style: TextStyle(color: Color(0xFFA8A1BD)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text(
+                'Stay',
+                style: TextStyle(color: Color(0xFFD6C2FF)),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text(
+                'Log Out',
+                style: TextStyle(color: Color(0xFFFF4EB8)),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await PlayerAuthService.instance.logout();
+      if (!context.mounted) return;
+      // Reset navigation stack and let AuthGate
+      // display Sign Up for logged-out players.
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const AuthGate(),
+        ),
+            (route) => false,
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Logout failed. Please try again.'),
+        ),
+      );
+    }
   }
 
   Widget _card({required Widget child}) {
@@ -338,6 +403,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ),
+
+          if (!widget.showEnterButton) ...[
+            const SizedBox(height: 28),
+
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => orbitLogout(context),
+                icon: const Icon(
+                  Icons.logout_rounded,
+                  color: Color(0xFFFF4EB8),
+                ),
+                label: const Text(
+                  'Log Out',
+                  style: TextStyle(
+                    color: Color(0xFFFF4EB8),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 17),
+                  side: const BorderSide(
+                    color: Color(0xFF8A4DFF),
+                  ),
+                  backgroundColor: const Color(0x221D1538),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -364,6 +461,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: FutureBuilder<OrbitProfile?>(
               future: _profileFuture,
               builder: (context, snapshot) {
+                // GIVE FIRESTORE TO LOAD BEFORE THE APPS CONSIDER THE PROFILE BLANK.
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.primaryPink,
+                    ),
+                  );
+                }
+
                 if (snapshot.hasError) {
                   debugPrint('❌ PROFILE ERROR: ${snapshot.error}');
 
@@ -385,8 +491,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onPressed: () {
                         Navigator.of(context).pushReplacement(
                           MaterialPageRoute(
-                            builder: (_) =>
-                            const ProfileSetupScreen(),
+                            builder: (_) => const ProfileSetupScreen(),
                           ),
                         );
                       },

@@ -1,8 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../../core/services/orbit_profile.dart';
+import '../profile/orbit_profile.dart';
 import '../home_screen.dart';
-import '../profile_setup_screen.dart';
+import '../profile/profile_setup_screen.dart';
 import 'auth_screen.dart';
 
 enum _GatePage {
