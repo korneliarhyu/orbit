@@ -1,17 +1,19 @@
 # orbit
-
 AI Social Universe - ChatApp
 
-## Getting Started
+# How to run the apps:
+flutter pub get
+dart pub global activate flutterfire_cli
 
-This project is a starting point for a Flutter application.
+cd functions
+npm install
+npm run build
+cd ..
 
-A few resources to get you started if this is your first Flutter project:
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr" 
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+firebase emulators:start --only auth,firestore,functions --project orbit-9cd6b --import=./emulator-data --export-on-exit=./emulator-data
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+flutter run -d emulator-5554
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+save the data manually: firebase emulators:export ./emulator-data
