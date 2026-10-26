@@ -110,3 +110,5 @@ export const replyAsMika = onCall(
     }
   }
 );
+
+export { replyAsNpc } from "./reply_as_npc";
