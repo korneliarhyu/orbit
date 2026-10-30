@@ -1,4 +1,3 @@
-
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -7,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../chat/chat_screen.dart';
 import 'match_service.dart';
 import 'npc_persona.dart';
+import 'npc_profile_generator.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
@@ -17,7 +17,7 @@ class DiscoverScreen extends StatefulWidget {
 
 class _DiscoverScreenState extends State<DiscoverScreen>
     with SingleTickerProviderStateMixin {
-  final _generator = NpcGenerator();
+  final _generator = NpcProfileGenerator();
   late final List<NpcPersona> _deck;
   late final AnimationController _swipeController;
 
@@ -179,7 +179,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
               ),
               const SizedBox(height: 6),
               Text(
-                npc.archetype.name,
+                npc.career,
                 style: const TextStyle(color: AppColors.primaryPink),
               ),
               const SizedBox(height: 20),
@@ -423,7 +423,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      npc.archetype.name,
+                      npc.career,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(

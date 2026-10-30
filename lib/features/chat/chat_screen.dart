@@ -47,7 +47,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isNpc) {
       final service = NpcChatService.instance;
       _matchStream = service.watchMatch(widget.npcId!);
-      _messagesStream = service.watchLastMessage(widget.npcId!);
+      _messagesStream = service.watchMessages(widget.npcId!);
     } else {
       _legacyStore.addListener(_onLegacyChatUpdated);
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -166,7 +166,7 @@ class _ChatScreenState extends State<ChatScreen> {
       subtitle: 'AI Character · Demo',
       content: AnimatedBuilder(
         animation: _legacyStore,
-        builder: (_, __) {
+        builder: (_, _) {
           final messages = _legacyStore.messagesFor(name);
           final typing = _legacyStore.isTyping(name);
           final entries = messages
@@ -204,7 +204,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
         final npc = document.data()!;
         final name = npc['name'] as String? ?? 'Traveler';
-        final archetype = npc['archetype'] as String? ?? 'Cosmic Connection';
+
+        final age = (npc['age'] as num?)?.toInt();
+        final career = (npc['career'] as String?)?.trim();
+
+        final subtitle = [
+          if (age != null) '$age',
+          if (career != null && career.isNotEmpty) career,
+        ].join(' • ');
 
         final intimacy = npc['intimacy'];
         final rawScore = intimacy is Map ? intimacy['score'] : null;
@@ -214,7 +221,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
         return _roomLayout(
           name: name,
-          subtitle: archetype,
+          subtitle: subtitle,
           intimacyScore: score,
           content: _buildNpcMessages(npc),
         );

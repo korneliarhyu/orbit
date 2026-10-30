@@ -2,7 +2,6 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'npc_persona.dart';
-import 'npc_career.dart';
 
 // ============================================================
 // MATCH RESULT
@@ -176,28 +175,24 @@ class MatchService {
   // 4. MATCH GENERATION
   // ----------------------------------------------------------
   Future<MatchOutcome> tryMatch(NpcPersona npc) async {
-    // Step 1: Determine whether a match occurs.
+    // Determine whether a match occurs.
     final isMatch = _random.nextDouble() < matchChance;
 
     if (!isMatch) {
       return const MatchOutcome(isMatch: false);
     }
 
-    // Step 2: Determine who starts the conversation.
+    // Determine who starts the conversation.
     final npcStarts = _random.nextDouble() < npcFirstChance;
 
     final firstMessage = npcStarts
         ? _generateFirstMessage(npc)
         : null;
 
-    // Step 3: Generate career based on NPC traits.
-    // Weighted random keeps career varied, not deterministic.
-    final career = NpcCareerGenerator.generate(npc.traits);
-
-    // Step 4: Prepare Firestore reference.
+    // Prepare Firestore reference.
     final matchRef = _matches.doc(npc.id);
 
-    // Step 5: Save only if this match does not exist yet.
+    // Save only if this match does not exist yet.
     return FirebaseFirestore.instance.runTransaction<MatchOutcome>((transaction) async {
         final existing = await transaction.get(matchRef);
 
@@ -229,7 +224,7 @@ class MatchService {
               .toList(),
 
           // Career
-          'career': career,
+          'career': npc.career,
 
           // Chat state
           'npcStarts': npcStarts,
