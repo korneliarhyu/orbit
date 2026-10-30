@@ -16,25 +16,14 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Connect to Firebase Auth Emulator
-  await FirebaseAuth.instance.useAuthEmulator(
-    '10.0.2.2',
-    9099,
-  );
+// Connect to Firebase Emulators
+  const host = '10.0.2.2';
 
-  // CONNECT TO FIREBASE DATABASE
-  FirebaseFirestore.instance.useFirestoreEmulator(
-    '10.0.2.2',
-    8080,
-  );
-
-  // Connect to Firebase Functions Emulator
+  await FirebaseAuth.instance.useAuthEmulator(host, 9099);
+  FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
   FirebaseFunctions.instanceFor(
     region: 'asia-southeast1',
-  ).useFunctionsEmulator(
-    '10.0.2.2',
-    5001,
-  );
+  ).useFunctionsEmulator(host, 5001);
 
   // Load saved conversations
   await ChatStore.instance.initialize();
