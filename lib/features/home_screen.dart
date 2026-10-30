@@ -1,14 +1,24 @@
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_colors.dart';
 import '../core/widgets/app_chat_tile.dart';
+
 import 'chat/chat_screen.dart';
+import 'chat/npc_chat_service.dart';
 import 'discover/discover_screen.dart';
 import 'discover/match_service.dart';
 import 'profile/profile_screen.dart';
 
+// ============================================================
+// CHAT FILTER
+// ============================================================
 enum ChatFilter { all, unread }
 
+// ============================================================
+// HOME SCREEN
+// ============================================================
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -17,7 +27,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _searchController =
+  TextEditingController();
+
   final PageController _pageController = PageController();
 
   late final Stream<List<OrbitMatch>> _matchesStream;
@@ -38,7 +50,12 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // ==========================================================
+  // NAVIGATION
+  // ==========================================================
   void _goToTab(int index) {
+    if (!_pageController.hasClients) return;
+
     _pageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 300),
@@ -62,18 +79,32 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  List<OrbitMatch> _filterMatches(List<OrbitMatch> matches) {
-    final query = _searchController.text.trim().toLowerCase();
+  // ==========================================================
+  // SEARCH & FILTER
+  // ==========================================================
+  List<OrbitMatch> _filterMatches(
+      List<OrbitMatch> matches,
+      ) {
+    final query = _searchController.text
+        .trim()
+        .toLowerCase();
 
     return matches.where((match) {
-      final matchesSearch = match.name.toLowerCase().contains(query) ||
-          match.archetype.toLowerCase().contains(query);
+      final matchesSearch =
+          match.name.toLowerCase().contains(query) ||
+              match.archetype.toLowerCase().contains(query) ||
+              (match.career?.toLowerCase().contains(query) ?? false);
+
       final matchesFilter =
           _selectedFilter == ChatFilter.all || match.unread;
 
       return matchesSearch && matchesFilter;
-    }).toList();
+    }).toList(growable: false);
   }
+
+  // ==========================================================
+  // MAIN LAYOUT
+  // ==========================================================
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +112,9 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: AppColors.background,
       body: PageView(
         controller: _pageController,
-        onPageChanged: (index) => setState(() => _selectedTab = index),
+        onPageChanged: (index) {
+          setState(() => _selectedTab = index);
+        },
         children: [
           _buildChatsPage(),
           const DiscoverScreen(),
@@ -93,52 +126,81 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // MAIN CHAT PAGE
+  // ==========================================================
+  // CHATS PAGE
+  // ==========================================================
+
   Widget _buildChatsPage() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(),
-          const SizedBox(height: 24),
-          _buildSearchBar(),
-          const SizedBox(height: 18),
-          _buildFilters(),
-          const SizedBox(height: 22),
-          const Text(
-            'Your Messages',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Stay connected across your universe.',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: Container(
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: const Color(0xF0181424),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: AppColors.border),
+    return SafeArea(
+      top: true,
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          20,
+          12,
+          20,
+          0,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(),
+
+            const SizedBox(height: 24),
+
+            _buildSearchBar(),
+
+            const SizedBox(height: 18),
+
+            _buildFilters(),
+
+            const SizedBox(height: 22),
+
+            const Text(
+              'Your Messages',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
               ),
-              child: _buildMatchesList(),
             ),
-          ),
-          const SizedBox(height: 12),
-        ],
+
+            const SizedBox(height: 6),
+
+            const Text(
+              'Stay connected across your universe.',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            Expanded(
+              child: Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: const Color(0xF0181424),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: AppColors.border,
+                  ),
+                ),
+                child: _buildMatchesList(),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+          ],
+        ),
       ),
     );
   }
+
+  // ==========================================================
+  // MATCH LIST
+  // ==========================================================
 
   Widget _buildMatchesList() {
     return StreamBuilder<List<OrbitMatch>>(
@@ -148,14 +210,18 @@ class _HomeScreenState extends State<HomeScreen> {
           return const Center(
             child: Text(
               'Unable to load matches',
-              style: TextStyle(color: AppColors.textSecondary),
+              style: TextStyle(
+                color: AppColors.textSecondary,
+              ),
             ),
           );
         }
 
         if (!snapshot.hasData) {
           return const Center(
-            child: CircularProgressIndicator(color: AppColors.primaryPink),
+            child: CircularProgressIndicator(
+              color: AppColors.primaryPink,
+            ),
           );
         }
 
@@ -163,11 +229,15 @@ class _HomeScreenState extends State<HomeScreen> {
         final matches = _filterMatches(allMatches);
 
         if (matches.isEmpty) {
-          return _buildEmptyState(noMatchesYet: allMatches.isEmpty);
+          return _buildEmptyState(
+            noMatchesYet: allMatches.isEmpty,
+          );
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(
+            vertical: 6,
+          ),
           itemCount: matches.length,
           separatorBuilder: (_, _) => const Divider(
             height: 1,
@@ -178,14 +248,10 @@ class _HomeScreenState extends State<HomeScreen> {
           itemBuilder: (context, index) {
             final match = matches[index];
 
-            return OrbitChatTile(
-              name: match.name,
-              message: match.preview,
-              time: match.timeLabel,
-              unreadCount: match.unread ? 1 : 0,
-              isOnline: false,
-              isGroup: false,
-              avatarColor: AppColors.primaryPurple,
+            // Each tile watches its own latest message.
+            return _MatchConversationTile(
+              key: ValueKey(match.npcId),
+              match: match,
               onTap: () => _openMatch(match),
             );
           },
@@ -194,7 +260,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // HEADER
+  // ==========================================================
+  // ORBIT HEADER
+  // ==========================================================
+
   Widget _buildHeader() {
     return Row(
       children: [
@@ -203,7 +272,9 @@ class _HomeScreenState extends State<HomeScreen> {
           color: AppColors.primaryPink,
           size: 27,
         ),
+
         const SizedBox(width: 10),
+
         const Expanded(
           child: Text(
             'ORBIT',
@@ -215,27 +286,39 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+
         IconButton(
           tooltip: 'Discover people',
           onPressed: () => _goToTab(1),
-          icon: const Icon(Icons.edit_square, color: AppColors.softLilac),
+          icon: const Icon(
+            Icons.edit_square,
+            color: AppColors.softLilac,
+          ),
         ),
       ],
     );
   }
 
-  // SEARCH FIELD
+  // ==========================================================
+  // SEARCH BAR
+  // ==========================================================
+
   Widget _buildSearchBar() {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: AppColors.border,
+        ),
       ),
       child: TextField(
         controller: _searchController,
         onChanged: (_) => setState(() {}),
-        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 14,
+        ),
         decoration: const InputDecoration(
           hintText: 'Search conversations...',
           prefixIcon: Icon(
@@ -246,13 +329,18 @@ class _HomeScreenState extends State<HomeScreen> {
           enabledBorder: InputBorder.none,
           focusedBorder: InputBorder.none,
           filled: false,
-          contentPadding: EdgeInsets.symmetric(vertical: 14),
+          contentPadding: EdgeInsets.symmetric(
+            vertical: 14,
+          ),
         ),
       ),
     );
   }
 
-  // A single widget generator handles both filter chips.
+  // ==========================================================
+  // FILTER CHIPS
+  // ==========================================================
+
   Widget _buildFilters() {
     return Wrap(
       spacing: 8,
@@ -260,9 +348,15 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         for (final filter in ChatFilter.values)
           ChoiceChip(
-            label: Text(filter == ChatFilter.all ? 'All' : 'Unread'),
+            label: Text(
+              filter == ChatFilter.all
+                  ? 'All'
+                  : 'Unread',
+            ),
             selected: _selectedFilter == filter,
-            onSelected: (_) => setState(() => _selectedFilter = filter),
+            onSelected: (_) {
+              setState(() => _selectedFilter = filter);
+            },
             showCheckmark: false,
             selectedColor: AppColors.primaryPurple,
             backgroundColor: AppColors.cardSoft,
@@ -274,7 +368,10 @@ class _HomeScreenState extends State<HomeScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(30),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 6,
+            ),
             labelStyle: TextStyle(
               color: _selectedFilter == filter
                   ? Colors.white
@@ -289,10 +386,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // EMPTY SEARCH RESULT
-  Widget _buildEmptyState({required bool noMatchesYet}) {
-    final isUnread = _selectedFilter == ChatFilter.unread;
-    final hasSearch = _searchController.text.trim().isNotEmpty;
+  // ==========================================================
+  // EMPTY STATE
+  // ==========================================================
+
+  Widget _buildEmptyState({
+    required bool noMatchesYet,
+  }) {
+    final isUnread =
+        _selectedFilter == ChatFilter.unread;
+
+    final hasSearch =
+        _searchController.text.trim().isNotEmpty;
+
     final title = noMatchesYet
         ? 'No connections yet ✦'
         : hasSearch
@@ -300,6 +406,7 @@ class _HomeScreenState extends State<HomeScreen> {
         : isUnread
         ? 'All caught up ✦'
         : 'No conversations found';
+
     final subtitle = noMatchesYet
         ? 'Your next cosmic connection is just a swipe away.'
         : hasSearch
@@ -319,7 +426,9 @@ class _HomeScreenState extends State<HomeScreen> {
               color: AppColors.primaryPink,
               size: 52,
             ),
+
             const SizedBox(height: 18),
+
             Text(
               title,
               textAlign: TextAlign.center,
@@ -329,7 +438,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+
             const SizedBox(height: 10),
+
             Text(
               subtitle,
               textAlign: TextAlign.center,
@@ -338,11 +449,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 fontSize: 13,
               ),
             ),
+
             if (noMatchesYet) ...[
               const SizedBox(height: 24),
+
               ElevatedButton.icon(
                 onPressed: () => _goToTab(1),
-                icon: const Icon(Icons.explore_rounded),
+                icon: const Icon(
+                  Icons.explore_rounded,
+                ),
                 label: const Text('Explore Discover'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryPurple,
@@ -356,6 +471,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ==========================================================
+  // BOTTOM NAVIGATION
+  // ==========================================================
+
   Widget _buildBottomNavigation() {
     return BottomNavigationBar(
       currentIndex: _selectedTab,
@@ -368,8 +487,12 @@ class _HomeScreenState extends State<HomeScreen> {
       unselectedFontSize: 11,
       items: const [
         BottomNavigationBarItem(
-          icon: Icon(Icons.chat_bubble_outline_rounded),
-          activeIcon: Icon(Icons.chat_bubble_rounded),
+          icon: Icon(
+            Icons.chat_bubble_outline_rounded,
+          ),
+          activeIcon: Icon(
+            Icons.chat_bubble_rounded,
+          ),
           label: 'Chats',
         ),
         BottomNavigationBarItem(
@@ -388,6 +511,123 @@ class _HomeScreenState extends State<HomeScreen> {
           label: 'Profile',
         ),
       ],
+    );
+  }
+}
+
+// ============================================================
+// REAL-TIME CONVERSATION TILE
+// ============================================================
+
+class _MatchConversationTile extends StatefulWidget {
+  final OrbitMatch match;
+  final VoidCallback onTap;
+
+  const _MatchConversationTile({
+    super.key,
+    required this.match,
+    required this.onTap,
+  });
+
+  @override
+  State<_MatchConversationTile> createState() =>
+      _MatchConversationTileState();
+}
+
+class _MatchConversationTileState
+    extends State<_MatchConversationTile> {
+
+  late Stream<QuerySnapshot<Map<String, dynamic>>>
+  _latestMessageStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeStream();
+  }
+
+  @override
+  void didUpdateWidget(
+      covariant _MatchConversationTile oldWidget,
+      ) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.match.npcId != widget.match.npcId) {
+      _initializeStream();
+    }
+  }
+
+  void _initializeStream() {
+    // Listen to only ONE message, not the full chat history.
+    _latestMessageStream = NpcChatService.instance
+        .matchRef(widget.match.npcId)
+        .collection('messages')
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .snapshots();
+  }
+
+  String _formatMessageTime(DateTime date) {
+    final local = date.toLocal();
+    final now = DateTime.now();
+
+    final isToday =
+        now.year == local.year &&
+            now.month == local.month &&
+            now.day == local.day;
+
+    if (isToday) {
+      final hour = local.hour.toString().padLeft(2, '0');
+      final minute = local.minute.toString().padLeft(2, '0');
+
+      return '$hour:$minute';
+    }
+
+    return '${local.day}/${local.month}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _latestMessageStream,
+      builder: (context, snapshot) {
+        Map<String, dynamic>? latest;
+
+        if (snapshot.hasData &&
+            snapshot.data!.docs.isNotEmpty) {
+          latest = snapshot.data!.docs.first.data();
+        }
+
+        final lastText = latest?['text'] as String?;
+        final sender = latest?['sender'] as String?;
+        final createdAt = latest?['createdAt'];
+
+        // Fall back to the original match message.
+        String preview = widget.match.preview;
+        String time = widget.match.timeLabel;
+
+        if (lastText != null &&
+            lastText.trim().isNotEmpty) {
+          preview = sender == 'player'
+              ? 'You: ${lastText.trim()}'
+              : lastText.trim();
+        }
+
+        if (createdAt is Timestamp) {
+          time = _formatMessageTime(createdAt.toDate());
+        }
+
+        return OrbitChatTile(
+          name: widget.match.name,
+          message: preview,
+          time: time,
+          unreadCount: widget.match.unread ? 1 : 0,
+          isOnline: false,
+          isGroup: false,
+          avatarColor: AppColors.primaryPurple,
+          onTap: widget.onTap,
+        );
+      },
     );
   }
 }

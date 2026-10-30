@@ -28,4 +28,18 @@ class AiService {
     return data['reply'] as String;
   }
 
+  Future<void> replyAsNpc({
+    required String npcId,
+    required String messageId,
+  }) async {
+    final callable = FirebaseFunctions.instanceFor(
+      region: 'asia-southeast1',
+    ).httpsCallable('replyAsNpc');
+
+    await callable.call(<String, dynamic>{
+      'npcId': npcId,
+      'messageId': messageId,
+    });
+  }
+
 }

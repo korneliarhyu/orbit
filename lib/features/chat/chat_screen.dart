@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/services/ai_service.dart';
 import 'chat_storage.dart';
 import 'npc_chat_service.dart';
 
@@ -34,6 +35,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _matchStream;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _messagesStream;
   bool _sending = false;
+  bool _npcTyping = false;
   int _previousMessageCount = -1;
 
   bool get _isNpc => widget.npcId != null;
@@ -45,7 +47,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isNpc) {
       final service = NpcChatService.instance;
       _matchStream = service.watchMatch(widget.npcId!);
-      _messagesStream = service.watchMessages(widget.npcId!);
+      _messagesStream = service.watchLastMessage(widget.npcId!);
     } else {
       _legacyStore.addListener(_onLegacyChatUpdated);
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -88,20 +90,40 @@ class _ChatScreenState extends State<ChatScreen> {
 
     setState(() => _sending = true);
     try {
-      await NpcChatService.instance.sendPlayerMessage(
+      final messageId = await NpcChatService.instance.sendPlayerMessage(
         npcId: widget.npcId!,
         text: text,
       );
+
       if (!mounted) return;
       if (_controller.text.trim() == text) _controller.clear();
+      setState(() => _npcTyping = true);
       _scrollToBottom();
+
+      try {
+        await AiService.instance.replyAsNpc(
+          npcId: widget.npcId!,
+          messageId: messageId,
+        );
+      } catch (error) {
+        if (!mounted) return;
+        // The player's message was saved. Only the AI reply failed.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Message saved, but NPC reply failed: $error')),
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Message not sent: $error')),
       );
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted) {
+        setState(() {
+          _npcTyping = false;
+          _sending = false;
+        });
+      }
     }
   }
 
@@ -388,7 +410,10 @@ class _ChatScreenState extends State<ChatScreen> {
           _scrollToBottom();
         }
 
-        return _messageList(entries);
+        return _messageList(
+          entries,
+          typingName: _npcTyping ? (npc['name'] as String? ?? 'NPC') : null,
+        );
       },
     );
   }
@@ -473,15 +498,12 @@ class _ChatScreenState extends State<ChatScreen> {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                message.text,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
+            Text(
+              message.text,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+                height: 1.4,
               ),
             ),
             if (message.at != null) ...[

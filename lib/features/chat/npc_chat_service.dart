@@ -1,9 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-/// Firestore repository for conversations with matched NPCs.
-/// A room is uniquely identified by the signed-in player's UID + npcId.
-
 class NpcChatService {
   NpcChatService._();
 
@@ -33,14 +30,17 @@ class NpcChatService {
       String npcId,
       ) => matchRef(npcId).snapshots();
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> watchMessages(
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchLastMessage(
       String npcId,
-      ) => matchRef(npcId)
-      .collection('messages')
-      .orderBy('createdAt')
-      .snapshots();
+      ) {
+    return matchRef(npcId)
+        .collection('messages')
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .snapshots();
+  }
 
-  Future<void> sendPlayerMessage({
+  Future<String> sendPlayerMessage({
     required String npcId,
     required String text,
   }) async {
@@ -49,10 +49,12 @@ class NpcChatService {
       throw FormatException('Message must contain 1–1000 characters.');
     }
 
-    await matchRef(npcId).collection('messages').add({
+    final doc = await matchRef(npcId).collection('messages').add({
       'sender': 'player',
       'text': message,
       'createdAt': FieldValue.serverTimestamp(),
     });
+
+    return doc.id;
   }
 }
