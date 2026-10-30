@@ -1,3 +1,8 @@
+// --------------------------------------------------------
+// 1. IMPORTS & DEPENDENCIES
+// --------------------------------------------------------
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +12,9 @@ import '../../core/services/ai_service.dart';
 import 'chat_storage.dart';
 import 'npc_chat_service.dart';
 
+// --------------------------------------------------------
+// 2. CHAT SCREEN: MIKA & MATCHED NPC INPUTS
+// --------------------------------------------------------
 /// One chat UI for the legacy Mika flow and Firestore NPC matches.
 /// Existing usage: ChatScreen(characterName: 'Mika')
 /// New NPC usage: ChatScreen(npcId: npc.id)
@@ -27,6 +35,9 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
+// --------------------------------------------------------
+// 3. CHAT STATE: CONTROLLERS, STREAMS & TIMERS
+// --------------------------------------------------------
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -38,8 +49,18 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _npcTyping = false;
   int _previousMessageCount = -1;
 
+  Timer? _replyDebounce;
+  Timer? _revealTimer;
+  DateTime? _nextReveal;
+  String? _pendingMessageId;
+  String? _awaitingReplyToMessageId;
+  bool _replyRunning = false;
+
   bool get _isNpc => widget.npcId != null;
 
+// --------------------------------------------------------
+// 4. INITIALIZE MIKA LISTENER OR NPC FIRESTORE STREAMS
+// --------------------------------------------------------
   @override
   void initState() {
     super.initState();
@@ -58,6 +79,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // --------------------------------------------------------
+  // 5. SCROLL HANDLING
+  // --------------------------------------------------------
   void _onLegacyChatUpdated() => _scrollToBottom();
 
   void _scrollToBottom({bool jump = false}) {
@@ -76,6 +100,10 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  // --------------------------------------------------------
+  // 6. SEND PLAYER BUBBLES & START 2-SECOND DEBOUNCE
+  // --------------------------------------------------------
+  // Save every user bubble immediately; do not call OpenAI yet.
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _sending) return;
@@ -94,41 +122,102 @@ class _ChatScreenState extends State<ChatScreen> {
         npcId: widget.npcId!,
         text: text,
       );
-
       if (!mounted) return;
       if (_controller.text.trim() == text) _controller.clear();
-      setState(() => _npcTyping = true);
-      _scrollToBottom();
 
-      try {
-        await AiService.instance.replyAsNpc(
-          npcId: widget.npcId!,
-          messageId: messageId,
-        );
-      } catch (error) {
-        if (!mounted) return;
-        // The player's message was saved. Only the AI reply failed.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Message saved, but NPC reply failed: $error')),
-        );
-      }
+      setState(() {
+        _pendingMessageId = messageId;
+        _awaitingReplyToMessageId = messageId;
+        _npcTyping = true;
+      });
+
+      _replyDebounce?.cancel();
+      _replyDebounce = Timer(
+        const Duration(seconds: 2),
+        _flushNpcReply,
+      );
+      _scrollToBottom();
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Message not sent: $error')),
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          _npcTyping = false;
-          _sending = false;
-        });
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  // --------------------------------------------------------
+  // 7. FLUSH BATCH: CALL AI ONCE & HANDLE BUSY STATE
+  // --------------------------------------------------------
+  // One callable request for the latest burst of user bubbles.
+  Future<void> _flushNpcReply() async {
+    if (!mounted || _replyRunning || _pendingMessageId == null) return;
+
+    final messageId = _pendingMessageId!;
+    _pendingMessageId = null;
+    _replyRunning = true;
+    setState(() => _npcTyping = true);
+    var busy = false;
+
+    try {
+      final accepted = await AiService.instance.replyAsNpc(
+        npcId: widget.npcId!,
+        messageId: messageId,
+      );
+      if (!accepted) {
+        busy = true;
+        _pendingMessageId ??= messageId;
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('NPC reply failed; messages were saved: $error')),
+      );
+    } finally {
+      _replyRunning = false;
+      if (mounted) setState(() => _npcTyping = false);
+
+      // Messages sent while the AI was generating belong to the next batch.
+      if (mounted && _pendingMessageId != null) {
+        _replyDebounce?.cancel();
+        _replyDebounce = Timer(
+          busy
+              ? const Duration(seconds: 2)
+              : const Duration(milliseconds: 1800),
+          _flushNpcReply,
+        );
       }
     }
   }
 
+  // --------------------------------------------------------
+  // 8. SCHEDULE TIMED REVEAL FOR NPC BUBBLES
+  // --------------------------------------------------------
+  // Display stored NPC bubbles gradually (without additional AI requests).
+  void _scheduleReveal(DateTime? revealAt) {
+    if (_nextReveal == revealAt) return;
+    _revealTimer?.cancel();
+    _nextReveal = revealAt;
+    if (revealAt == null) return;
+
+    final delay = revealAt.difference(DateTime.now());
+    _revealTimer = Timer(
+      delay.isNegative ? Duration.zero : delay + const Duration(milliseconds: 30),
+          () {
+        _nextReveal = null;
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  // --------------------------------------------------------
+  // 9. CLEAN UP TIMERS, LISTENERS & CONTROLLERS
+  // --------------------------------------------------------
   @override
   void dispose() {
+    _replyDebounce?.cancel();
+    _revealTimer?.cancel();
     if (!_isNpc) {
       _legacyStore.removeListener(_onLegacyChatUpdated);
       _legacyStore.closeChat(widget.characterName!);
@@ -138,6 +227,9 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  // --------------------------------------------------------
+  // 10. CHAT PAGE SCAFFOLD & COSMIC BACKGROUND
+  // --------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -159,6 +251,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // --------------------------------------------------------
+  // 11. LEGACY MIKA CONVERSATION
+  // --------------------------------------------------------
   Widget _buildLegacyRoom() {
     final name = widget.characterName!;
     return _roomLayout(
@@ -185,6 +280,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // --------------------------------------------------------
+  // 12. NPC ROOM: LIVE PROFILE, AGE, CAREER & INTIMACY
+  // --------------------------------------------------------
   Widget _buildNpcRoom() {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: _matchStream,
@@ -204,10 +302,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
         final npc = document.data()!;
         final name = npc['name'] as String? ?? 'Traveler';
-
         final age = (npc['age'] as num?)?.toInt();
         final career = (npc['career'] as String?)?.trim();
-
         final subtitle = [
           if (age != null) '$age',
           if (career != null && career.isNotEmpty) career,
@@ -229,6 +325,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // --------------------------------------------------------
+  // 13. SHARED LAYOUT: HEADER, MESSAGES & INPUT
+  // --------------------------------------------------------
   Widget _roomLayout({
     required String name,
     required String subtitle,
@@ -244,6 +343,10 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // --------------------------------------------------------
+  // 14. EMPTY, LOADING & ERROR STATUS
+  // --------------------------------------------------------
+
   Widget _status(String message) {
     return Center(
       child: Padding(
@@ -256,6 +359,10 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
   }
+
+  // --------------------------------------------------------
+  // 15. CHAT HEADER & INTIMACY PROGRESS BAR
+  // --------------------------------------------------------
 
   Widget _buildHeader(
       String name,
@@ -378,6 +485,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // --------------------------------------------------------
+  // 16. WATCH MESSAGE HISTORY & HIDE FUTURE NPC BUBBLES
+  // --------------------------------------------------------
   Widget _buildNpcMessages(Map<String, dynamic> npc) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _messagesStream,
@@ -390,8 +500,12 @@ class _ChatScreenState extends State<ChatScreen> {
             child: CircularProgressIndicator(color: AppColors.primaryPink),
           );
         }
-
+        final documents = snapshot.data!.docs;
         final entries = <_ChatEntry>[];
+
+        // --------------------------------------------------------
+        // 1. ADD INITIAL MATCH MESSAGE
+        // --------------------------------------------------------
         final first = npc['firstMessage'] as String?;
         if (npc['npcStarts'] == true && first != null && first.isNotEmpty) {
           final matchedAt = npc['matchedAt'];
@@ -402,8 +516,55 @@ class _ChatScreenState extends State<ChatScreen> {
           ));
         }
 
+        // --------------------------------------------------------
+        // 2. FIND THE BATCH FOR THE LATEST PLAYER MESSAGE
+        // --------------------------------------------------------
+        String? awaitingBatchId;
+        if (_awaitingReplyToMessageId != null) {
+          for (final doc in documents) {
+            if (doc.id == _awaitingReplyToMessageId) {
+              final batchId = doc.data()['replyBatchId'];
+
+              if (batchId is String &&
+                  batchId.isNotEmpty &&
+                  batchId != 'legacy') {
+                awaitingBatchId = batchId;
+              }
+
+              break;
+            }
+          }
+        }
+
+        // --------------------------------------------------------
+        // 3. BUILD VISIBLE MESSAGE HISTORY
+        // --------------------------------------------------------
+        DateTime? upcomingReveal;
+        bool hasVisibleReply = false;
+        final now = DateTime.now();
         for (final doc in snapshot.data!.docs) {
           final message = doc.data();
+          final displayAt = message['displayAt'];
+
+          // Hide NPC bubbles scheduled for a later reveal.
+          if (displayAt is Timestamp) {
+            final showAt = displayAt.toDate();
+            if (showAt.isAfter(now)) {
+              if (upcomingReveal == null || showAt.isBefore(upcomingReveal)) {
+                upcomingReveal = showAt;
+              }
+              continue;
+            }
+          }
+
+          // Check whether the current player batch
+          // already has a visible NPC response.
+          if (awaitingBatchId != null &&
+              message['sender'] == 'npc' &&
+              message['inReplyTo'] == awaitingBatchId) {
+            hasVisibleReply = true;
+          }
+
           final createdAt = message['createdAt'];
           entries.add(_ChatEntry(
             text: message['text'] as String? ?? '',
@@ -412,18 +573,45 @@ class _ChatScreenState extends State<ChatScreen> {
           ));
         }
 
+        // --------------------------------------------------------
+        // 4. SCHEDULE NEXT NPC BUBBLE REVEAL
+        // --------------------------------------------------------
+        _scheduleReveal(upcomingReveal);
+
+        // --------------------------------------------------------
+        // 5. AUTO-SCROLL WHEN MESSAGE COUNT CHANGES
+        // --------------------------------------------------------
         if (_previousMessageCount != entries.length) {
           _previousMessageCount = entries.length;
           _scrollToBottom();
         }
 
+        // --------------------------------------------------------
+        // 6. CONTROL NPC TYPING VISIBILITY
+        // --------------------------------------------------------
+        // Keep typing visible while waiting for the reply.
+        // Hide when the first response is visible.
+        // Show again if another NPC bubble is scheduled.
+        final showTyping =
+            (_npcTyping && !hasVisibleReply) ||
+                upcomingReveal != null;
+
+        // --------------------------------------------------------
+        // 7. RENDER MESSAGES & TYPING INDICATOR
+        // --------------------------------------------------------
         return _messageList(
-          entries,
-          typingName: _npcTyping ? (npc['name'] as String? ?? 'NPC') : null,
+            entries,
+            typingName: showTyping
+                ? (npc['name'] as String? ?? 'NPC')
+                : null,
         );
       },
     );
   }
+
+  // --------------------------------------------------------
+  // 17. RENDER CONVERSATION LIST & TYPING INDICATOR
+  // --------------------------------------------------------
 
   Widget _messageList(
       List<_ChatEntry> entries, {
@@ -459,23 +647,17 @@ class _ChatScreenState extends State<ChatScreen> {
           );
         }
         if (index > entries.length) {
-          return Padding(
-            padding: const EdgeInsets.all(12),
-            child: Text(
-              '$typingName is typing...',
-              style: const TextStyle(
-                color: AppColors.softLilac,
-                fontSize: 12,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          );
+          return _TypingBubble(name: typingName!);
         }
 
         return _buildMessageBubble(entries[index - 1]);
       },
     );
   }
+
+  // --------------------------------------------------------
+  // 18. MESSAGE BUBBLE: SIZE, STYLE & TIMESTAMP
+  // --------------------------------------------------------
 
   Widget _buildMessageBubble(_ChatEntry message) {
     return Align(
@@ -531,11 +713,19 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // --------------------------------------------------------
+  // 19. FORMAT CHAT TIMESTAMPS
+  // --------------------------------------------------------
+
   String _formatTime(DateTime value) {
     final hour = value.hour.toString().padLeft(2, '0');
     final minute = value.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
   }
+
+  // --------------------------------------------------------
+  // 20. MESSAGE COMPOSER & SEND BUTTON
+  // --------------------------------------------------------
 
   Widget _buildInput(String name) {
     final canSend = _controller.text.trim().isNotEmpty && !_sending;
@@ -603,6 +793,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
+// --------------------------------------------------------
+// 21. INTERNAL MESSAGE DISPLAY MODEL
+// --------------------------------------------------------
+
 class _ChatEntry {
   final String text;
   final bool isMine;
@@ -613,4 +807,93 @@ class _ChatEntry {
     required this.isMine,
     this.at,
   });
+}
+
+// --------------------------------------------------------
+// 22. NPC TYPING BUBBLE: ANIMATED THREE DOTS
+// --------------------------------------------------------
+class _TypingBubble extends StatefulWidget {
+  const _TypingBubble({required this.name});
+
+  final String name;
+
+  @override
+  State<_TypingBubble> createState() => _TypingBubbleState();
+}
+
+class _TypingBubbleState extends State<_TypingBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animation = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          border: Border.all(color: AppColors.border),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+            bottomLeft: Radius.circular(5),
+            bottomRight: Radius.circular(20),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${widget.name} is typing',
+              style: const TextStyle(
+                color: AppColors.softLilac,
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+            const SizedBox(width: 8),
+            AnimatedBuilder(
+              animation: _animation,
+              builder: (context, child) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(3, (index) {
+                    final phase = (_animation.value - index * 0.20 + 1) % 1;
+                    final opacity = phase < 0.28 ? 1.0 : 0.30;
+                    return Padding(
+                      padding: EdgeInsets.only(right: index == 2 ? 0 : 4),
+                      child: Opacity(
+                        opacity: opacity,
+                        child: const CircleAvatar(
+                          radius: 2.5,
+                          backgroundColor: AppColors.softLilac,
+                        ),
+                      ),
+                    );
+                  }),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
