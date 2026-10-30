@@ -120,6 +120,7 @@ class NpcPersona {
   final String species;
   final int avatarIndex;
   final String bio;
+  final String career;
   final List<NpcTrait> traits;
   final NpcArchetype archetype;
 
@@ -130,6 +131,7 @@ class NpcPersona {
     required this.species,
     required this.avatarIndex,
     required this.bio,
+    required this.career,
     required this.traits,
     required this.archetype,
   });
@@ -282,6 +284,7 @@ class NpcGenerator {
       species: _species[_random.nextInt(_species.length)],
       avatarIndex: _random.nextInt(6),
       bio: bio,
+      career: '',
       traits: selected,
       archetype: archetype,
     );

@@ -30,6 +30,17 @@ class NpcChatService {
       String npcId,
       ) => matchRef(npcId).snapshots();
 
+  // CHECK ALL NPC-PLAYER MESSAGE
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchMessages(
+      String npcId,
+      ) {
+    return matchRef(npcId)
+        .collection('messages')
+        .orderBy('createdAt')
+        .snapshots();
+  }
+
+  // GET ONLY LATEST MESSAGE
   Stream<QuerySnapshot<Map<String, dynamic>>> watchLastMessage(
       String npcId,
       ) {
