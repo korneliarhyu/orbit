@@ -281,20 +281,11 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'lib/core/assets/bg.jpg',
-              fit: BoxFit.cover,
-            ),
-          ),
-          const Positioned.fill(
-            child: ColoredBox(color: Color(0xE60B0914)),
-          ),
-          SafeArea(child: _isNpc ? _buildNpcRoom() : _buildLegacyRoom()),
-        ],
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: _isNpc
+            ? _buildNpcRoom()
+            : _buildLegacyRoom(),
       ),
     );
   }

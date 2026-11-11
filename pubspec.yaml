@@ -63,6 +63,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - lib/core/assets/
     - lib/core/assets/bg.jpg
 
   # To add assets to your application, add an assets section, like this:

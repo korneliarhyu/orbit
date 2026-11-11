@@ -112,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent,
       body: PageView(
         controller: _pageController,
         onPageChanged: (index) {
@@ -268,37 +268,18 @@ class _HomeScreenState extends State<HomeScreen> {
   // ==========================================================
 
   Widget _buildHeader() {
-    return Row(
-      children: [
-        const Icon(
-          Icons.auto_awesome_rounded,
-          color: AppColors.primaryPink,
-          size: 27,
+    return SizedBox(
+      height: 36,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Image.asset(
+          'lib/core/assets/orbit_logo_long.png',
+          width: 150,
+          height: 34,
+          fit: BoxFit.contain,
+          alignment: Alignment.centerLeft,
         ),
-
-        const SizedBox(width: 10),
-
-        const Expanded(
-          child: Text(
-            'ORBIT',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 27,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 3,
-            ),
-          ),
-        ),
-
-        IconButton(
-          tooltip: 'Discover people',
-          onPressed: () => _goToTab(1),
-          icon: const Icon(
-            Icons.edit_square,
-            color: AppColors.softLilac,
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -485,7 +466,8 @@ class _HomeScreenState extends State<HomeScreen> {
       currentIndex: _selectedTab,
       onTap: _goToTab,
       type: BottomNavigationBarType.fixed,
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
       selectedItemColor: AppColors.primaryPink,
       unselectedItemColor: AppColors.textSecondary,
       selectedFontSize: 11,
@@ -505,10 +487,11 @@ class _HomeScreenState extends State<HomeScreen> {
           activeIcon: Icon(Icons.explore_rounded),
           label: 'Discover',
         ),
+        // UPCOMING FEATURES
         BottomNavigationBarItem(
           icon: Icon(Icons.public_outlined),
           activeIcon: Icon(Icons.public_rounded),
-          label: 'World',
+          label: 'Upcoming Features',
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.person_outline_rounded),
