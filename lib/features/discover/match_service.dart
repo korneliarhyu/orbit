@@ -29,6 +29,7 @@ class OrbitMatch {
   final String preview;
   final bool unread;
   final Timestamp? matchedAt;
+  final String relationshipStatus;
 
   const OrbitMatch({
     required this.npcId,
@@ -38,6 +39,7 @@ class OrbitMatch {
     required this.preview,
     required this.unread,
     required this.matchedAt,
+    required this.relationshipStatus,
   });
 
   factory OrbitMatch.fromDoc(
@@ -46,6 +48,7 @@ class OrbitMatch {
     final data = doc.data();
 
     final firstMessage = data['firstMessage'] as String?;
+    final relationshipStatus = data['relationshipStatus'] as String? ?? 'active';
 
     return OrbitMatch(
       npcId: doc.id,
@@ -55,8 +58,9 @@ class OrbitMatch {
       preview: firstMessage != null && firstMessage.trim().isNotEmpty
           ? firstMessage
           : "It's a match! Say hello ✨",
-      unread: data['npcStarts'] == true && data['opened'] != true,
+      unread: relationshipStatus == 'active' && data['npcStarts'] == true && data['opened'] != true,
       matchedAt: data['matchedAt'] as Timestamp?,
+      relationshipStatus: relationshipStatus,
     );
   }
 
@@ -76,6 +80,8 @@ class OrbitMatch {
 
     return '${date.day}/${date.month}';
   }
+  // CHECK WHETHER RELATIONSHIP HAS ENDED
+  bool get isEnded => relationshipStatus != 'active';
 }
 
 // ============================================================
@@ -233,6 +239,7 @@ class MatchService {
           'matchedAt': FieldValue.serverTimestamp(),
 
           // Relationship progression
+          'relationshipStatus': 'active',
           'intimacy': _initialIntimacy(),
         });
 

@@ -14,7 +14,7 @@ import 'profile/profile_screen.dart';
 // ============================================================
 // CHAT FILTER
 // ============================================================
-enum ChatFilter { all, unread }
+enum ChatFilter { all, unread, ended }
 
 // ============================================================
 // HOME SCREEN
@@ -95,8 +95,11 @@ class _HomeScreenState extends State<HomeScreen> {
               match.archetype.toLowerCase().contains(query) ||
               (match.career?.toLowerCase().contains(query) ?? false);
 
-      final matchesFilter =
-          _selectedFilter == ChatFilter.all || match.unread;
+      final matchesFilter = switch (_selectedFilter) {
+        ChatFilter.all => !match.isEnded,
+        ChatFilter.unread => !match.isEnded && match.unread,
+        ChatFilter.ended => match.isEnded,
+      };
 
       return matchesSearch && matchesFilter;
     }).toList(growable: false);
@@ -349,9 +352,11 @@ class _HomeScreenState extends State<HomeScreen> {
         for (final filter in ChatFilter.values)
           ChoiceChip(
             label: Text(
-              filter == ChatFilter.all
-                  ? 'All'
-                  : 'Unread',
+              switch (filter) {
+                ChatFilter.all => 'All',
+                ChatFilter.unread => 'Unread',
+                ChatFilter.ended => 'Ended',
+              },
             ),
             selected: _selectedFilter == filter,
             onSelected: (_) {
@@ -619,7 +624,9 @@ class _MatchConversationTileState
 
         return OrbitChatTile(
           name: widget.match.name,
-          message: preview,
+          message: widget.match.isEnded
+              ? 'Ended · $preview'
+              : preview,
           time: time,
           unreadCount: widget.match.unread ? 1 : 0,
           isOnline: false,
