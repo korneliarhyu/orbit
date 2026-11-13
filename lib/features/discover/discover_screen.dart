@@ -6,8 +6,8 @@ import '../../core/theme/app_colors.dart';
 import '../chat/chat_screen.dart';
 import '../../core/widgets/orbit_logo.dart';
 import 'match_service.dart';
-import 'npc_persona.dart';
-import 'npc_profile_generator.dart';
+import '../npc/npc_persona.dart';
+import '../npc/npc_profile_generator.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
