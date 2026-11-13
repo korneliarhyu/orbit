@@ -1,65 +1,98 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // PLAYER PROFILE
-    match /players/{userId} {
-      allow read, write: if request.auth != null
+    function isOwner(userId) {
+      return request.auth != null
         && request.auth.uid == userId;
     }
 
-    // MATCHED NPCs
+    // =========================================
+    // 1. PLAYER PROFILE
+    // =========================================
+    match /players/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // =========================================
+    // 2. MATCHED NPCs
+    // =========================================
     match /players/{userId}/matches/{npcId} {
-      function isOwner() {
-        return request.auth != null
-          && request.auth.uid == userId;
-      }
 
-      allow read: if isOwner();
+      allow read: if isOwner(userId);
 
-      allow create: if isOwner()
-        && request.resource.data.npcId == npcId;
+      // Flutter can create a new active match.
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasOnly([
+          'npcId',
+          'name',
+          'age',
+          'species',
+          'avatarIndex',
+          'bio',
+          'archetypeId',
+          'archetype',
+          'traits',
+          'career',
+          'npcStarts',
+          'firstMessage',
+          'opened',
+          'matchedAt',
+          'relationshipStatus',
+          'intimacy'
+        ])
+        && request.resource.data.keys().hasAll([
+          'npcId',
+          'relationshipStatus',
+          'opened',
+          'intimacy'
+        ])
+        && request.resource.data.npcId == npcId
+        && request.resource.data.relationshipStatus == 'active'
+        && request.resource.data.opened == false
+        && request.resource.data.intimacy is map
+        && request.resource.data.intimacy.score == 0
+        && request.resource.data.intimacy.level == 1
+        && request.resource.data.intimacy.totalExchanges == 0
+        && request.resource.data.intimacy.activeDays == 0
+        && request.resource.data.intimacy.xpToday == 0
+        && request.resource.data.intimacy.lastActiveDay == null
+        && request.resource.data.intimacy.keys().hasOnly([
+          'score',
+          'level',
+          'totalExchanges',
+          'activeDays',
+          'xpToday',
+          'lastActiveDay'
+        ]);
 
-      allow update: if isOwner()
+      // Flutter can ONLY mark a match as opened.
+      allow update: if isOwner(userId)
         && resource.data.opened == false
         && request.resource.data.opened == true
         && request.resource.data.diff(resource.data)
           .affectedKeys().hasOnly(['opened']);
 
+      // Match deletion is prohibited.
       allow delete: if false;
     }
 
-    // NPC CHAT MESSAGES
+    // =========================================
+    // 3. NPC CHAT MESSAGES
+    // =========================================
     match /players/{userId}/matches/{npcId}/messages/{messageId} {
-      function isOwner() {
-        return request.auth != null
-          && request.auth.uid == userId;
-      }
 
-      function matchExists() {
-        return exists(
+      // Player can read their own chat history.
+      allow read: if isOwner(userId)
+        && exists(
           /databases/$(database)/documents/players/$(userId)/matches/$(npcId)
         );
-      }
 
-      allow read: if isOwner() && matchExists();
-
-      allow create: if isOwner()
-        && matchExists()
-        && request.resource.data.keys().hasOnly([
-          'sender', 'text', 'createdAt'
-        ])
-        && request.resource.data.keys().hasAll([
-          'sender', 'text', 'createdAt'
-        ])
-        && request.resource.data.sender == 'player'
-        && request.resource.data.text is string
-        && request.resource.data.text.size() > 0
-        && request.resource.data.text.size() <= 1000
-        && request.resource.data.createdAt == request.time;
-
-      allow update, delete: if false;
+      // All message writes must go through
+      // Firebase Cloud Functions.
+      allow create, update, delete: if false;
     }
   }
 }

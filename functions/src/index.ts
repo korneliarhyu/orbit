@@ -112,3 +112,5 @@ export const replyAsMika = onCall(
 );
 
 export { replyAsNpc } from "./reply_as_npc";
+export { sendPlayerMessage } from "./send_player_message";
+export { endMatch } from "./end_match";

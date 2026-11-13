@@ -1,7 +1,7 @@
 import 'dart:math';
 
-import 'npc_persona.dart';
-import 'npc_career.dart';
+import '../npc/npc_persona.dart';
+import '../npc/npc_career.dart';
 import 'npc_bio_generator.dart';
 
 class NpcProfileGenerator {

@@ -39,6 +39,8 @@ dependencies:
   firebase_core: ^5.0.0
   firebase_auth: ^7.0.0
   cloud_firestore: ^7.1.0
+  image_picker: ^1.2.4
+  firebase_storage: ^14.0.1
 
 dev_dependencies:
   flutter_test:
@@ -63,6 +65,8 @@ flutter:
   uses-material-design: true
 
   assets:
+    - lib/core/assets/
+    - lib/core/assets/icons/
     - lib/core/assets/bg.jpg
 
   # To add assets to your application, add an assets section, like this:

@@ -192,6 +192,54 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   // --------------------------------------------------------
+  // UNMATCH CHAT FROM NPC TO PLAYER
+  // --------------------------------------------------------
+  Future<void> _confirmUnmatch() async {
+    if (!_isNpc) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('End this connection?'),
+        content: const Text(
+          'This conversation will end. You can still read the chat history.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep chatting'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Unmatch'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await NpcChatService.instance.endMatch(widget.npcId!);
+
+      _replyDebounce?.cancel();
+      _pendingMessageId = null;
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Connection ended.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not end match: $error')),
+      );
+    }
+  }
+
+  // --------------------------------------------------------
   // 8. SCHEDULE TIMED REVEAL FOR NPC BUBBLES
   // --------------------------------------------------------
   // Display stored NPC bubbles gradually (without additional AI requests).
@@ -233,20 +281,11 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'lib/core/assets/bg.jpg',
-              fit: BoxFit.cover,
-            ),
-          ),
-          const Positioned.fill(
-            child: ColoredBox(color: Color(0xE60B0914)),
-          ),
-          SafeArea(child: _isNpc ? _buildNpcRoom() : _buildLegacyRoom()),
-        ],
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: _isNpc
+            ? _buildNpcRoom()
+            : _buildLegacyRoom(),
       ),
     );
   }
@@ -315,11 +354,16 @@ class _ChatScreenState extends State<ChatScreen> {
             ? rawScore.toDouble().clamp(0.0, 100.0).toDouble()
             : 0.0;
 
+        final status = npc['relationshipStatus'] as String? ?? 'active';
+        final ended = status != 'active';
+
         return _roomLayout(
           name: name,
           subtitle: subtitle,
           intimacyScore: score,
-          content: _buildNpcMessages(npc),
+          ended: ended,
+          endedByNpc: status == 'unmatched_npc',
+          content: _buildNpcMessages(npc, ended: ended),
         );
       },
     );
@@ -333,12 +377,22 @@ class _ChatScreenState extends State<ChatScreen> {
     required String subtitle,
     required Widget content,
     double? intimacyScore,
+    bool ended = false,
+    bool endedByNpc = false,
   }) {
     return Column(
       children: [
-        _buildHeader(name, subtitle, intimacyScore: intimacyScore),
+        _buildHeader(
+          name,
+          subtitle,
+          intimacyScore: intimacyScore,
+          ended: ended,
+        ),
         Expanded(child: content),
-        _buildInput(name),
+        if (ended)
+          _endedChatBanner(endedByNpc)
+        else
+          _buildInput(name),
       ],
     );
   }
@@ -364,11 +418,13 @@ class _ChatScreenState extends State<ChatScreen> {
   // 15. CHAT HEADER & INTIMACY PROGRESS BAR
   // --------------------------------------------------------
 
+
   Widget _buildHeader(
       String name,
       String subtitle, {
         double? intimacyScore,
-      }) {
+        bool ended = false,
+  }) {
     final score = intimacyScore;
     final stage = score == null
         ? null
@@ -440,7 +496,22 @@ class _ChatScreenState extends State<ChatScreen> {
                   ],
                 ),
               ),
-              const Icon(Icons.auto_awesome, color: AppColors.primaryPink),
+
+              // UNMATCH BUTTON
+              if (_isNpc && !ended)
+                IconButton(
+                  tooltip: 'Unmatch',
+                  onPressed: _confirmUnmatch,
+                  icon: const Icon(
+                    Icons.heart_broken_outlined,
+                    color: AppColors.softLilac,
+                  ),
+                ),
+
+              const Icon(
+                Icons.auto_awesome,
+                color: AppColors.primaryPink,
+              ),
             ],
           ),
           if (score != null) ...[
@@ -488,7 +559,7 @@ class _ChatScreenState extends State<ChatScreen> {
   // --------------------------------------------------------
   // 16. WATCH MESSAGE HISTORY & HIDE FUTURE NPC BUBBLES
   // --------------------------------------------------------
-  Widget _buildNpcMessages(Map<String, dynamic> npc) {
+  Widget _buildNpcMessages(Map<String, dynamic> npc, {required bool ended}) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _messagesStream,
       builder: (context, snapshot) {
@@ -589,12 +660,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // --------------------------------------------------------
         // 6. CONTROL NPC TYPING VISIBILITY
         // --------------------------------------------------------
-        // Keep typing visible while waiting for the reply.
-        // Hide when the first response is visible.
-        // Show again if another NPC bubble is scheduled.
-        final showTyping =
-            (_npcTyping && !hasVisibleReply) ||
-                upcomingReveal != null;
+        final showTyping = !ended && ((_npcTyping && !hasVisibleReply) || upcomingReveal != null);
 
         // --------------------------------------------------------
         // 7. RENDER MESSAGES & TYPING INDICATOR
@@ -807,6 +873,24 @@ class _ChatEntry {
     required this.isMine,
     this.at,
   });
+}
+
+// --------------------------------------------------------
+// END CHAT BANNER
+// --------------------------------------------------------
+Widget _endedChatBanner(bool endedByNpc) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(16),
+    color: AppColors.cardSoft,
+    child: Text(
+      endedByNpc
+          ? 'This character decided to end the connection.'
+          : 'You ended this connection.',
+      textAlign: TextAlign.center,
+      style: const TextStyle(color: AppColors.softLilac),
+    ),
+  );
 }
 
 // --------------------------------------------------------

@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import 'npc_persona.dart';
+import '../npc/npc_persona.dart';
 
 class NpcBioGenerator {
   NpcBioGenerator._();

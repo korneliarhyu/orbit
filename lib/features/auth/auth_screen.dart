@@ -1,11 +1,14 @@
 import 'dart:ui';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'player_auth_service.dart';
-import '../../core/theme/app_colors.dart';
-import '../home_screen.dart';
-import '../profile/profile_setup_screen.dart';
 
+import '../../core/theme/app_colors.dart';
+import 'auth_gate.dart';
+import 'player_auth_service.dart';
+
+/// Sign up and sign in for ORBIT.
+/// The app-wide cosmic background is already provided by MaterialApp.builder.
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
@@ -14,8 +17,10 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  final _formKey = GlobalKey<FormState>();
+  static const _logoAsset = 'lib/core/assets/orbit_wordmark.png';
+  static final _usernamePattern = RegExp(r'^[a-z0-9_]{5,12}$');
 
+  final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
@@ -33,14 +38,39 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
-  void _changeMode(bool signUp) {
+  void _switchMode() {
+    if (_loading) return;
+    _passwordController.clear();
+    _confirmController.clear();
     setState(() {
-      _isSignUp = signUp;
-      _confirmController.clear();
+      _isSignUp = !_isSignUp;
+      _hidePassword = true;
+      _hideConfirm = true;
     });
   }
 
-  String _authError(FirebaseAuthException error) {
+  String? _validateUsername(String? value) {
+    final username = value?.trim() ?? '';
+    if (username.isEmpty) return 'Enter your username.';
+    if (!_usernamePattern.hasMatch(username)) {
+      return 'Use 5–12 lowercase letters, numbers, or _.';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if ((value ?? '').length < 6) return 'Minimum 6 characters.';
+    return null;
+  }
+
+  String? _validateConfirmation(String? value) {
+    if (value != _passwordController.text) {
+      return 'Passwords do not match.';
+    }
+    return null;
+  }
+
+  String _messageForAuthError(FirebaseAuthException error) {
     switch (error.code) {
       case 'email-already-in-use':
         return 'Username already taken. Try another one.';
@@ -51,9 +81,9 @@ class _AuthScreenState extends State<AuthScreen> {
       case 'weak-password':
         return 'Password is too weak.';
       case 'operation-not-allowed':
-        return 'Enable Email/Password in Firebase Authentication.';
+        return 'Email/Password authentication is disabled.';
       case 'network-request-failed':
-        return 'Connection failed. Check Firebase Emulator.';
+        return 'Connection failed. Check your Firebase connection.';
       case 'too-many-requests':
         return 'Too many attempts. Please try again later.';
       default:
@@ -61,8 +91,19 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  void _showError(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: const Color(0xFF402039),
+        ),
+      );
+  }
+
   Future<void> _submit() async {
-    if (_loading || !_formKey.currentState!.validate()) return;
+    if (_loading || !(_formKey.currentState?.validate() ?? false)) return;
 
     FocusScope.of(context).unfocus();
     setState(() => _loading = true);
@@ -84,35 +125,64 @@ class _AuthScreenState extends State<AuthScreen> {
       }
 
       if (!mounted) return;
-
+      // AuthGate decides whether an existing profile should go to
+      // ProfileSetup or Home, including on sign-in.
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (_) => _isSignUp
-              ? const ProfileSetupScreen()
-              : const HomeScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const AuthGate()),
             (route) => false,
       );
     } on FirebaseAuthException catch (error) {
-      if (mounted) _showError(_authError(error));
+      if (mounted) _showError(_messageForAuthError(error));
     } on FormatException catch (error) {
       if (mounted) _showError(error.message);
     } catch (error) {
-      debugPrint('Authentication failed: ${error.runtimeType}');
-      if (mounted) {
-        _showError('Something went wrong. Try again.');
-      }
+      debugPrint('ORBIT auth error: ${error.runtimeType}');
+      if (mounted) _showError('Something went wrong. Try again.');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: const Color(0xFF402039),
-      ),
+  Widget _brandHeader() {
+    return Column(
+      children: [
+        Image.asset(
+          _logoAsset,
+          width: 204,
+          height: 72,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            debugPrint('ORBIT logo not found: $error');
+            return const SizedBox(
+              height: 72,
+              child: Center(
+                child: Text(
+                  'ORBIT',
+                  style: TextStyle(
+                    color: AppColors.softLilac,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 4,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'A world that remembers you.',
+          style: TextStyle(color: AppColors.softLilac, fontSize: 12),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  InputBorder _inputBorder(Color color, {double width = 1}) {
+    return OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: color, width: width),
     );
   }
 
@@ -121,10 +191,12 @@ class _AuthScreenState extends State<AuthScreen> {
     required String hint,
     required TextEditingController controller,
     required IconData icon,
-    bool password = false,
-    bool confirm = false,
+    required String? Function(String?) validator,
+    bool isPassword = false,
+    bool isConfirmation = false,
+    bool isLast = false,
   }) {
-    final hidden = confirm ? _hideConfirm : _hidePassword;
+    final hidden = isConfirmation ? _hideConfirm : _hidePassword;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -140,13 +212,19 @@ class _AuthScreenState extends State<AuthScreen> {
         const SizedBox(height: 9),
         TextFormField(
           controller: controller,
+          validator: validator,
           autocorrect: false,
-          enableSuggestions: !password,
-          obscureText: password && hidden,
-          textInputAction: password
-              ? TextInputAction.done
-              : TextInputAction.next,
-          onFieldSubmitted: password ? (_) => _submit() : null,
+          enableSuggestions: !isPassword,
+          keyboardType: isPassword ? TextInputType.visiblePassword : TextInputType.text,
+          textCapitalization: TextCapitalization.none,
+          obscureText: isPassword && hidden,
+          textInputAction: isLast ? TextInputAction.done : TextInputAction.next,
+          autofillHints: isPassword
+              ? [isConfirmation || _isSignUp
+              ? AutofillHints.newPassword
+              : AutofillHints.password]
+              : const [AutofillHints.username],
+          onFieldSubmitted: isLast ? (_) => _submit() : null,
           style: const TextStyle(
             color: AppColors.textPrimary,
             fontSize: 14,
@@ -158,22 +236,17 @@ class _AuthScreenState extends State<AuthScreen> {
               color: AppColors.textSecondary,
               fontSize: 13,
             ),
-            prefixIcon: Icon(
-              icon,
-              color: AppColors.softLilac,
-              size: 19,
-            ),
-            suffixIcon: password
+            prefixIcon: Icon(icon, size: 19, color: AppColors.softLilac),
+            suffixIcon: isPassword
                 ? IconButton(
-              onPressed: () {
-                setState(() {
-                  if (confirm) {
-                    _hideConfirm = !_hideConfirm;
-                  } else {
-                    _hidePassword = !_hidePassword;
-                  }
-                });
-              },
+              tooltip: hidden ? 'Show password' : 'Hide password',
+              onPressed: () => setState(() {
+                if (isConfirmation) {
+                  _hideConfirm = !_hideConfirm;
+                } else {
+                  _hidePassword = !_hidePassword;
+                }
+              }),
               icon: Icon(
                 hidden
                     ? Icons.visibility_off_outlined
@@ -189,60 +262,17 @@ class _AuthScreenState extends State<AuthScreen> {
               horizontal: 16,
               vertical: 17,
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(
-                color: Color(0x775C477A),
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(
-                color: AppColors.primaryPink,
-                width: 1.5,
-              ),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(
-                color: AppColors.danger,
-              ),
-            ),
-            focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(
-                color: AppColors.danger,
-              ),
-            ),
+            enabledBorder: _inputBorder(const Color(0x775C477A)),
+            focusedBorder: _inputBorder(AppColors.primaryPink, width: 1.5),
+            errorBorder: _inputBorder(AppColors.danger),
+            focusedErrorBorder: _inputBorder(AppColors.danger),
           ),
-          validator: (value) {
-            final text = value ?? '';
-
-            if (confirm) {
-              return text == _passwordController.text
-                  ? null
-                  : 'Passwords do not match.';
-            }
-
-            if (password) {
-              return text.length >= 6
-                  ? null
-                  : 'Minimum 6 characters.';
-            }
-
-            if (!RegExp(r'^[a-zA-Z0-9_]{3,20}$')
-                .hasMatch(text.trim())) {
-              return 'Use 3-20 letters, numbers, or _.';
-            }
-
-            return null;
-          },
         ),
       ],
     );
   }
 
-  Widget _gradientButton() {
+  Widget _primaryButton() {
     return Container(
       width: double.infinity,
       height: 55,
@@ -253,7 +283,6 @@ class _AuthScreenState extends State<AuthScreen> {
           BoxShadow(
             color: AppColors.primaryPink.withAlpha(65),
             blurRadius: 24,
-            spreadRadius: 1,
           ),
         ],
       ),
@@ -280,9 +309,7 @@ class _AuthScreenState extends State<AuthScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              _isSignUp
-                  ? 'Create Your Account'
-                  : 'Enter Your Universe',
+              _isSignUp ? 'Create Your Account' : 'Enter Your Universe',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 15,
@@ -290,42 +317,33 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            const Icon(
-              Icons.arrow_forward_rounded,
-              color: Colors.white,
-            ),
+            const Icon(Icons.arrow_forward_rounded, color: Colors.white),
           ],
         ),
       ),
     );
   }
 
-  Widget _glassCard() {
+  Widget _authCard() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
       child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: 18,
-          sigmaY: 18,
-        ),
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
+          width: double.infinity,
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: const Color(0x991D1538),
+            color: const Color(0xB51D1538),
             borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: const Color(0x887F60AD),
-              width: 1.1,
-            ),
+            border: Border.all(color: const Color(0x887F60AD)),
           ),
           child: Form(
             key: _formKey,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  _isSignUp
-                      ? 'Create Your Account'
-                      : 'Welcome Back, Traveler',
+                  _isSignUp ? 'Create Your Account' : 'Welcome Back, Traveler',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: AppColors.textPrimary,
@@ -344,24 +362,24 @@ class _AuthScreenState extends State<AuthScreen> {
                     fontSize: 12,
                   ),
                 ),
-                const SizedBox(height: 30),
-
+                const SizedBox(height: 28),
                 _inputField(
                   label: 'Username',
                   hint: 'Your cosmic username',
                   controller: _usernameController,
                   icon: Icons.alternate_email_rounded,
+                  validator: _validateUsername,
                 ),
                 const SizedBox(height: 18),
-
                 _inputField(
                   label: 'Password',
                   hint: 'Enter your password',
                   controller: _passwordController,
                   icon: Icons.lock_outline_rounded,
-                  password: true,
+                  validator: _validatePassword,
+                  isPassword: true,
+                  isLast: !_isSignUp,
                 ),
-
                 if (_isSignUp) ...[
                   const SizedBox(height: 18),
                   _inputField(
@@ -369,15 +387,15 @@ class _AuthScreenState extends State<AuthScreen> {
                     hint: 'Repeat your password',
                     controller: _confirmController,
                     icon: Icons.verified_user_outlined,
-                    password: true,
-                    confirm: true,
+                    validator: _validateConfirmation,
+                    isPassword: true,
+                    isConfirmation: true,
+                    isLast: true,
                   ),
                 ],
-
                 const SizedBox(height: 28),
-                _gradientButton(),
-
-                const SizedBox(height: 25),
+                _primaryButton(),
+                const SizedBox(height: 20),
                 Wrap(
                   alignment: WrapAlignment.center,
                   crossAxisAlignment: WrapCrossAlignment.center,
@@ -392,9 +410,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                     ),
                     TextButton(
-                      onPressed: _loading
-                          ? null
-                          : () => _changeMode(!_isSignUp),
+                      onPressed: _loading ? null : _switchMode,
                       child: Text(
                         _isSignUp ? 'Sign In' : 'Sign Up',
                         style: const TextStyle(
@@ -416,122 +432,57 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'lib/core/assets/bg.jpg',
-              fit: BoxFit.cover,
-            ),
-          ),
-          const Positioned.fill(
-            child: ColoredBox(
-              color: Color(0xB5090718),
-            ),
-          ),
-
-          // Cosmic glow behind the glass card
-          Positioned(
-            top: 120,
-            right: -80,
-            child: IgnorePointer(
-              child: Container(
-                width: 230,
-                height: 230,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primaryPurple.withAlpha(90),
-                      blurRadius: 110,
-                      spreadRadius: 28,
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight > 48
+                      ? constraints.maxHeight - 48
+                      : 0,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 440),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _brandHeader(),
+                        const SizedBox(height: 26),
+                        _authCard(),
+                        const SizedBox(height: 22),
+                        const Text(
+                          '✦  FIND YOUR PLACE AMONG THE STARS  ✦',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            letterSpacing: 1.2,
+                            fontSize: 10,
+                          ),
+                        ),
+                        if (_isSignUp) ...[
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Use a fictional username. Never share your real identity.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
-
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 22,
-                    vertical: 28,
-                  ),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight - 56,
-                    ),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: 440,
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.satellite_alt_rounded,
-                              color: AppColors.primaryPink,
-                              size: 55,
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'O R B I T',
-                              style: TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 27,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 5,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'A world that remembers you.',
-                              style: TextStyle(
-                                color: AppColors.softLilac,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 32),
-
-                            _glassCard(),
-
-                            const SizedBox(height: 25),
-                            const Text(
-                              '✦  FIND YOUR PLACE AMONG THE STARS  ✦',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: AppColors.textSecondary,
-                                letterSpacing: 1.2,
-                                fontSize: 10,
-                              ),
-                            ),
-                            if (_isSignUp) ...[
-                              const SizedBox(height: 12),
-                              const Text(
-                                'Use a fictional username. '
-                                    'Never share your real identity.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }

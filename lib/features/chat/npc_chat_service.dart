@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class NpcChatService {
   NpcChatService._();
@@ -55,17 +56,36 @@ class NpcChatService {
     required String npcId,
     required String text,
   }) async {
-    final message = text.trim();
-    if (message.isEmpty || message.length > 1000) {
-      throw FormatException('Message must contain 1–1000 characters.');
+    final cleanText = text.trim();
+
+    if (cleanText.isEmpty || cleanText.length > 1000) {
+      throw FormatException(
+        'Message must contain 1–1000 characters.',
+      );
     }
 
-    final doc = await matchRef(npcId).collection('messages').add({
-      'sender': 'player',
-      'text': message,
-      'createdAt': FieldValue.serverTimestamp(),
+    final functions = FirebaseFunctions.instanceFor(
+      region: 'asia-southeast1',
+    );
+
+    final callable = functions.httpsCallable('sendPlayerMessage');
+
+    final result = await callable.call({
+      'npcId': npcId,
+      'text': cleanText,
     });
 
-    return doc.id;
+    final data = Map<String, dynamic>.from(result.data as Map);
+    return data['messageId'] as String;
+  }
+
+  Future<void> endMatch(String npcId) async {
+    final functions = FirebaseFunctions.instanceFor(
+      region: 'asia-southeast1',
+    );
+
+    await functions.httpsCallable('endMatch').call({
+      'npcId': npcId,
+    });
   }
 }
