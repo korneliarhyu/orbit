@@ -9,6 +9,9 @@ import 'match_service.dart';
 import '../npc/npc_persona.dart';
 import '../npc/npc_profile_generator.dart';
 
+import '../npc/npc_appearance.dart';
+import '../npc/npc_avatar_widget.dart';
+
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
 
@@ -21,6 +24,30 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   final _generator = NpcProfileGenerator();
   late final List<NpcPersona> _deck;
   late final AnimationController _swipeController;
+
+// Cache avatar berdasarkan NPC ID.
+// Mencegah wajah berubah ketika widget rebuild.
+  final Map<String, NpcAppearance> _appearanceCache = {};
+
+// Stable seed derived from NPC ID.
+// Avoid String.hashCode for persisted identity.
+  int _seedFromId(String id) {
+    var hash = 0;
+    for (final code in id.runes) {
+      hash = (hash * 31 + code) & 0x7fffffff;
+    }
+    return hash;
+  }
+
+  NpcAppearance _appearanceFor(NpcPersona npc) {
+    return _appearanceCache.putIfAbsent(
+      npc.id,
+          () => NpcAppearance.generate(
+        career: npc.career,
+        seed: _seedFromId(npc.id),
+      ),
+    );
+  }
 
   Animation<Offset> _motion = const AlwaysStoppedAnimation(Offset.zero);
   Offset _drag = Offset.zero;
@@ -70,8 +97,14 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
   void _nextNpc() {
     setState(() {
-      _deck.removeAt(0);
+      final swipedNpc = _deck.removeAt(0);
+
+      // Release appearance cache for swiped NPC.
+      _appearanceCache.remove(swipedNpc.id);
+
+      // Generate the next NPC.
       _deck.add(_generator.generate());
+
       _drag = Offset.zero;
     });
   }
@@ -325,15 +358,38 @@ class _DiscoverScreenState extends State<DiscoverScreen>
             ),
           ),
         ),
-        Center(
-          child: Icon(
-            npc.species == 'Android'
-                ? Icons.smart_toy_rounded
-                : Icons.person_rounded,
-            size: 215,
-            color: AppColors.softLilac.withAlpha(185),
+
+// Layered NPC portrait replaces placeholder icon.
+        Positioned.fill(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final portraitSize =
+                  constraints.maxWidth * 1.12;
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    top: 24,
+                    left: (constraints.maxWidth -
+                        portraitSize) /
+                        2,
+                    width: portraitSize,
+                    height: portraitSize,
+                    child: NpcAvatarWidget(
+                      key: ValueKey(
+                        'npc-avatar-${npc.id}',
+                      ),
+                      appearance: _appearanceFor(npc),
+                      size: portraitSize,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
+
         const Positioned(
           top: 70,
           right: 30,

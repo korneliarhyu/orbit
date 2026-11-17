@@ -1,26 +1,43 @@
+
 import 'dart:math';
+
 import 'npc_outfit_generator.dart';
 
+// ======================================================
+// NPC PORTRAIT ANGLE
+// ======================================================
+
 enum NpcAngle {
-  left,
   front,
+  left,
   right,
 }
 
+// ======================================================
+// NPC APPEARANCE MODEL
+// ======================================================
+
 class NpcAppearance {
   final int seed;
+
+  // Character identity
   final String career;
   final String outfit;
   final NpcAngle angle;
 
+  // Face components
   final int skinTone;
-  final int faceShape;
   final int eyes;
   final int eyebrows;
   final int nose;
   final int mouth;
-  final int hair;
-  final int tattoo;
+
+  // Hair components
+  final int hairFront;
+  final int? hairBack;
+
+  // Optional appearance
+  final int? tattoo;
 
   const NpcAppearance({
     required this.seed,
@@ -28,54 +45,136 @@ class NpcAppearance {
     required this.outfit,
     required this.angle,
     required this.skinTone,
-    required this.faceShape,
     required this.eyes,
     required this.eyebrows,
     required this.nose,
     required this.mouth,
-    required this.hair,
-    required this.tattoo,
+    required this.hairFront,
+    this.hairBack,
+    this.tattoo,
   });
 
-  // Generate appearance once per NPC.
+  // ====================================================
+  // ASSET CONFIGURATION
+  // ====================================================
+
+  static const String assetRoot =
+      'lib/core/assets/npc';
+
+  // Actual number of available PNG assets.
+  static const int skinCount = 5;
+  static const int eyesCount = 5;
+  static const int eyebrowsCount = 5;
+  static const int noseCount = 5;
+  static const int mouthCount = 5;
+  static const int hairFrontCount = 5;
+
+  // Enable when tattoo assets are ready.
+  static const bool enableTattoo = false;
+  static const int tattooCount = 0;
+
+  // Probability of having a tattoo.
+  static const double tattooChance = 0.25;
+
+  // Hair styles requiring a matching back layer.
+  //
+  // Empty for now because we haven't confirmed
+  // which hairstyle IDs need back hair.
+  //
+  // Example:
+  // {3, 5} means hair_front_03 and 05
+  // will use hair_back_03 and 05.
+  static const Set<int> hairStylesWithBack = {};
+
+  // ====================================================
+  // HELPER GETTERS
+  // ====================================================
+
+  bool get hasTattoo => tattoo != null;
+
+  bool get hasHairBack => hairBack != null;
+
+  String get assetFolder =>
+      '$assetRoot/${angle.name}';
+
+  static String formatId(int value) {
+    return value.toString().padLeft(2, '0');
+  }
+
+  // ====================================================
+  // RANDOM APPEARANCE GENERATOR
+  // ====================================================
+
   factory NpcAppearance.generate({
     required String career,
     required int seed,
-    List<NpcAngle> supportedAngles = const [
-      NpcAngle.front,
-    ],
   }) {
-    if (supportedAngles.isEmpty) {
-      throw ArgumentError('supportedAngles cannot be empty');
-    }
-
+    // Deterministic random:
+    // same seed + career = same appearance.
     final rng = Random(seed);
 
-    final angle = supportedAngles[
-    rng.nextInt(supportedAngles.length)
-    ];
+    // MVP: FRONT only.
+    const angle = NpcAngle.front;
 
-    final skinTone = rng.nextInt(6) + 1;
-    final faceShape = rng.nextInt(3) + 1;
+    // ------------------------------------------
+    // 1. SKIN
+    // ------------------------------------------
 
-    final eyes = rng.nextInt(6) + 1;
-    final eyebrows = rng.nextInt(6) + 1;
-    final nose = rng.nextInt(6) + 1;
-    final mouth = rng.nextInt(6) + 1;
+    final skinTone = rng.nextInt(skinCount) + 1;
 
-    // Hair uses matching back/front variants.
-    final hair = rng.nextInt(8) + 1;
+    // ------------------------------------------
+    // 2. FACIAL FEATURES
+    // ------------------------------------------
 
-    // 45% chance of having a tattoo.
-    final tattoo = rng.nextDouble() < 0.45
-        ? rng.nextInt(8) + 1
-        : 0;
+    final eyes = rng.nextInt(eyesCount) + 1;
 
-    // Career-based outfit.
+    final eyebrows =
+        rng.nextInt(eyebrowsCount) + 1;
+
+    final nose = rng.nextInt(noseCount) + 1;
+
+    final mouth = rng.nextInt(mouthCount) + 1;
+
+    // ------------------------------------------
+    // 3. HAIRSTYLE
+    // ------------------------------------------
+
+    final hairFront =
+        rng.nextInt(hairFrontCount) + 1;
+
+    // Only certain hairstyles need back hair.
+    final int? hairBack =
+    hairStylesWithBack.contains(hairFront)
+        ? hairFront
+        : null;
+
+    // ------------------------------------------
+    // 4. OPTIONAL TATTOO
+    // ------------------------------------------
+
+    int? tattoo;
+
+    if (enableTattoo && tattooCount > 0) {
+      final hasTattoo =
+          rng.nextDouble() < tattooChance;
+
+      if (hasTattoo) {
+        tattoo = rng.nextInt(tattooCount) + 1;
+      }
+    }
+
+    // ------------------------------------------
+    // 5. CAREER-BASED OUTFIT
+    // ------------------------------------------
+
     final outfit = NpcOutfitGenerator.generate(
       career,
       random: rng,
     );
+
+    // ------------------------------------------
+    // 6. FINAL APPEARANCE
+    // ------------------------------------------
 
     return NpcAppearance(
       seed: seed,
@@ -83,79 +182,91 @@ class NpcAppearance {
       outfit: outfit,
       angle: angle,
       skinTone: skinTone,
-      faceShape: faceShape,
       eyes: eyes,
       eyebrows: eyebrows,
       nose: nose,
       mouth: mouth,
-      hair: hair,
+      hairFront: hairFront,
+      hairBack: hairBack,
       tattoo: tattoo,
     );
   }
 
-  static const String assetRoot =
-      'lib/core/assets/npc';
+  // ====================================================
+  // SERIALIZATION
+  // ====================================================
 
-  static String _id(int value) =>
-      value.toString().padLeft(2, '0');
-
-  String get _root => '$assetRoot/${angle.name}';
-
-  // Image order: back -> front.
-  List<String> get layers => [
-    '$_root/hair_back/hair_${_id(hair)}.png',
-
-    '$_root/base/skin_${_id(skinTone)}.png',
-
-    if (tattoo != 0)
-      '$_root/tattoos/tattoo_${_id(tattoo)}.png',
-
-    '$_root/outfits/$outfit.png',
-
-    '$_root/eyes/eyes_${_id(eyes)}.png',
-
-    '$_root/eyebrows/brows_${_id(eyebrows)}.png',
-
-    '$_root/noses/nose_${_id(nose)}.png',
-
-    '$_root/mouths/mouth_${_id(mouth)}.png',
-
-    '$_root/hair_front/hair_${_id(hair)}.png',
-  ];
-
-  Map<String, dynamic> toJson() => {
-    'seed': seed,
-    'career': career,
-    'outfit': outfit,
-    'angle': angle.name,
-    'skinTone': skinTone,
-    'faceShape': faceShape,
-    'eyes': eyes,
-    'eyebrows': eyebrows,
-    'nose': nose,
-    'mouth': mouth,
-    'hair': hair,
-    'tattoo': tattoo,
-  };
+  Map<String, dynamic> toJson() {
+    return {
+      'seed': seed,
+      'career': career,
+      'outfit': outfit,
+      'angle': angle.name,
+      'skinTone': skinTone,
+      'eyes': eyes,
+      'eyebrows': eyebrows,
+      'nose': nose,
+      'mouth': mouth,
+      'hairFront': hairFront,
+      'hairBack': hairBack,
+      'tattoo': tattoo,
+    };
+  }
 
   factory NpcAppearance.fromJson(
       Map<String, dynamic> json,
       ) {
+    // Compatibility with older saved NPCs.
+    final rawHairFront =
+        json['hairFront'] ??
+            json['hair'] ??
+            json['hair_front'];
+
+    final rawHairBack = json['hairBack'];
+    final rawTattoo = json['tattoo'];
+
     return NpcAppearance(
       seed: json['seed'] as int,
       career: json['career'] as String,
       outfit: json['outfit'] as String,
       angle: NpcAngle.values.byName(
-        json['angle'] as String,
+        (json['angle'] as String?) ?? 'front',
       ),
       skinTone: json['skinTone'] as int,
-      faceShape: json['faceShape'] as int,
       eyes: json['eyes'] as int,
       eyebrows: json['eyebrows'] as int,
       nose: json['nose'] as int,
       mouth: json['mouth'] as int,
-      hair: json['hair'] as int,
-      tattoo: json['tattoo'] as int,
+      hairFront: rawHairFront as int,
+      hairBack: rawHairBack is int &&
+          rawHairBack > 0
+          ? rawHairBack
+          : null,
+      tattoo: rawTattoo is int && rawTattoo > 0
+          ? rawTattoo
+          : null,
     );
+  }
+
+  // ====================================================
+  // DEBUG INFORMATION
+  // ====================================================
+
+  @override
+  String toString() {
+    return 'NpcAppearance('
+        'seed: $seed, '
+        'career: $career, '
+        'outfit: $outfit, '
+        'angle: ${angle.name}, '
+        'skin: $skinTone, '
+        'eyes: $eyes, '
+        'eyebrows: $eyebrows, '
+        'nose: $nose, '
+        'mouth: $mouth, '
+        'hairFront: $hairFront, '
+        'hairBack: $hairBack, '
+        'tattoo: $tattoo'
+        ')';
   }
 }
