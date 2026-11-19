@@ -78,13 +78,9 @@ class NpcAppearance {
 
   // Hair styles requiring a matching back layer.
   //
-  // Empty for now because we haven't confirmed
-  // which hairstyle IDs need back hair.
-  //
-  // Example:
-  // {3, 5} means hair_front_03 and 05
-  // will use hair_back_03 and 05.
-  static const Set<int> hairStylesWithBack = {};
+  // All five front hairstyles have matching hair_back_0X assets.
+  // The same ID must be used for front and back to keep hair aligned.
+  static const Set<int> hairStylesWithBack = {1, 2, 3, 4, 5};
 
   // ====================================================
   // HELPER GETTERS
