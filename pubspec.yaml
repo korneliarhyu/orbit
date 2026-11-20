@@ -67,14 +67,13 @@ flutter:
   assets:
     - lib/core/assets/
     - lib/core/assets/icons/
-    - lib/core/assets/npc/front/base/
-    - lib/core/assets/npc/front/eyebrows/
+    - lib/core/assets/npc/front/faces/
     - lib/core/assets/npc/front/eyes/
-    - lib/core/assets/npc/front/hair_back/
-    - lib/core/assets/npc/front/hair_front/
-    - lib/core/assets/npc/front/mouths/
+    - lib/core/assets/npc/front/hair/
     - lib/core/assets/npc/front/noses/
+    - lib/core/assets/npc/front/mouth/
     - lib/core/assets/npc/front/outfits/
+
 
   # To add assets to your application, add an assets section, like this:
   # assets:

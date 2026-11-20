@@ -359,12 +359,16 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           ),
         ),
 
-// Layered NPC portrait replaces placeholder icon.
+        // Layered NPC portrait replaces placeholder icon.
+
         Positioned.fill(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final portraitSize =
-                  constraints.maxWidth * 1.12;
+              final portraitWidth =
+                  constraints.maxWidth * 1.05;
+
+              final portraitHeight =
+                  portraitWidth * (1402 / 1122);
 
               return Stack(
                 clipBehavior: Clip.none,
@@ -372,16 +376,16 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                   Positioned(
                     top: 24,
                     left: (constraints.maxWidth -
-                        portraitSize) /
+                        portraitWidth) /
                         2,
-                    width: portraitSize,
-                    height: portraitSize,
+                    width: portraitWidth,
+                    height: portraitHeight,
                     child: NpcAvatarWidget(
                       key: ValueKey(
                         'npc-avatar-${npc.id}',
                       ),
                       appearance: _appearanceFor(npc),
-                      size: portraitSize,
+                      size: portraitWidth,
                     ),
                   ),
                 ],
