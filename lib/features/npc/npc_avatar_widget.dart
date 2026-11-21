@@ -191,7 +191,7 @@ class _NpcAvatarWidgetState extends State<NpcAvatarWidget> {
     const double noseShiftY = 150.0;
 
     // Rambut tetap agak naik dan sedikit diperkecil
-    const double hairScale = 0.95;
+    const double hairScale = 0.9;
     const double hairShiftY = -18.0;
 
     // ==================================================

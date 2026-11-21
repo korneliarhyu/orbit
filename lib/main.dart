@@ -20,15 +20,21 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+
   // --------------------------------------------------
-  // 2. LOCAL FIREBASE EMULATORS
-  // Android Emulator: 10.0.2.2
-  // Debug only, never release.
+  // 2. FIREBASE EMULATOR CONFIGURATION
   // --------------------------------------------------
-  if (kDebugMode) {
+  // false = Firebase Cloud
+  // true  = Local Firebase Emulator (debug only)
+  const useFirebaseEmulators = false;
+
+  if (kDebugMode && useFirebaseEmulators) {
     const host = '10.0.2.2';
 
-    await FirebaseAuth.instance.useAuthEmulator(host, 9099);
+    await FirebaseAuth.instance.useAuthEmulator(
+      host,
+      9099,
+    );
 
     FirebaseFirestore.instance.useFirestoreEmulator(
       host,
@@ -37,7 +43,10 @@ Future<void> main() async {
 
     FirebaseFunctions.instanceFor(
       region: 'asia-southeast1',
-    ).useFunctionsEmulator(host, 5001);
+    ).useFunctionsEmulator(
+      host,
+      5001,
+    );
   }
 
   // --------------------------------------------------
