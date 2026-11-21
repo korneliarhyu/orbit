@@ -1,161 +1,226 @@
+
 import 'dart:math';
+
 import 'npc_outfit_generator.dart';
 
-enum NpcAngle {
-  left,
-  front,
-  right,
-}
+enum NpcAngle { front, left, right }
 
+/// Visual identity for an ORBIT NPC.
+///
+/// Five asset categories:
+/// faces, eyes, hair, noses, outfits.
 class NpcAppearance {
   final int seed;
   final String career;
   final String outfit;
   final NpcAngle angle;
 
-  final int skinTone;
-  final int faceShape;
+  final int face;
   final int eyes;
-  final int eyebrows;
-  final int nose;
-  final int mouth;
   final int hair;
-  final int tattoo;
+  final int nose;
+  final int outfitVariant;
 
   const NpcAppearance({
     required this.seed,
     required this.career,
     required this.outfit,
-    required this.angle,
-    required this.skinTone,
-    required this.faceShape,
+    this.angle = NpcAngle.front,
+    required this.face,
     required this.eyes,
-    required this.eyebrows,
-    required this.nose,
-    required this.mouth,
     required this.hair,
-    required this.tattoo,
+    required this.nose,
+    required this.outfitVariant,
   });
 
-  // Generate appearance once per NPC.
-  factory NpcAppearance.generate({
-    required String career,
-    required int seed,
-    List<NpcAngle> supportedAngles = const [
-      NpcAngle.front,
-    ],
-  }) {
-    if (supportedAngles.isEmpty) {
-      throw ArgumentError('supportedAngles cannot be empty');
-    }
-
-    final rng = Random(seed);
-
-    final angle = supportedAngles[
-    rng.nextInt(supportedAngles.length)
-    ];
-
-    final skinTone = rng.nextInt(6) + 1;
-    final faceShape = rng.nextInt(3) + 1;
-
-    final eyes = rng.nextInt(6) + 1;
-    final eyebrows = rng.nextInt(6) + 1;
-    final nose = rng.nextInt(6) + 1;
-    final mouth = rng.nextInt(6) + 1;
-
-    // Hair uses matching back/front variants.
-    final hair = rng.nextInt(8) + 1;
-
-    // 45% chance of having a tattoo.
-    final tattoo = rng.nextDouble() < 0.45
-        ? rng.nextInt(8) + 1
-        : 0;
-
-    // Career-based outfit.
-    final outfit = NpcOutfitGenerator.generate(
-      career,
-      random: rng,
-    );
-
-    return NpcAppearance(
-      seed: seed,
-      career: career,
-      outfit: outfit,
-      angle: angle,
-      skinTone: skinTone,
-      faceShape: faceShape,
-      eyes: eyes,
-      eyebrows: eyebrows,
-      nose: nose,
-      mouth: mouth,
-      hair: hair,
-      tattoo: tattoo,
-    );
-  }
+  // =====================================================
+  // ASSET CONFIGURATION
+  // =====================================================
 
   static const String assetRoot =
       'lib/core/assets/npc';
 
-  static String _id(int value) =>
-      value.toString().padLeft(2, '0');
+  String get assetFolder => '$assetRoot/front';
 
-  String get _root => '$assetRoot/${angle.name}';
+  // =====================================================
+  // LEGACY COMPATIBILITY
+  // =====================================================
 
-  // Image order: back -> front.
-  List<String> get layers => [
-    '$_root/hair_back/hair_${_id(hair)}.png',
+  @Deprecated('Use face instead')
+  int get skinTone => face;
 
-    '$_root/base/skin_${_id(skinTone)}.png',
+  @Deprecated('Use hair instead')
+  int get hairFront => hair;
 
-    if (tattoo != 0)
-      '$_root/tattoos/tattoo_${_id(tattoo)}.png',
+  @Deprecated('Eyes and eyebrows are a single asset now')
+  int get eyebrows => eyes;
 
-    '$_root/outfits/$outfit.png',
+  @Deprecated('Mouth artwork is included in the face asset')
+  int get mouth => face;
 
-    '$_root/eyes/eyes_${_id(eyes)}.png',
+  @Deprecated('There is no independent back-hair layer')
+  int? get hairBack => null;
 
-    '$_root/eyebrows/brows_${_id(eyebrows)}.png',
+  @Deprecated('Tattoos are not part of the five-layer asset pack')
+  int? get tattoo => null;
 
-    '$_root/noses/nose_${_id(nose)}.png',
+  bool get hasHairBack => false;
+  bool get hasTattoo => false;
 
-    '$_root/mouths/mouth_${_id(mouth)}.png',
+  // =====================================================
+  // RANDOM APPEARANCE GENERATOR
+  // =====================================================
 
-    '$_root/hair_front/hair_${_id(hair)}.png',
-  ];
+  /// Same seed produces the same generated selections.
+  ///
+  /// The avatar renderer maps these selections to
+  /// the actual available assets.
+  factory NpcAppearance.generate({
+    required String career,
+    required int seed,
+  }) {
+    final rng = Random(seed);
+
+    int nextVariant() =>
+        rng.nextInt(0x7fffffff) + 1;
+
+    final face = nextVariant();
+    final eyes = nextVariant();
+    final hair = nextVariant();
+    final nose = nextVariant();
+    final outfitVariant = nextVariant();
+
+    return NpcAppearance(
+      seed: seed,
+      career: career,
+      outfit: NpcOutfitGenerator.generate(
+        career,
+        random: rng,
+      ),
+      face: face,
+      eyes: eyes,
+      hair: hair,
+      nose: nose,
+      outfitVariant: outfitVariant,
+    );
+  }
+
+  // =====================================================
+  // SERIALIZATION
+  // =====================================================
 
   Map<String, dynamic> toJson() => {
     'seed': seed,
     'career': career,
     'outfit': outfit,
     'angle': angle.name,
-    'skinTone': skinTone,
-    'faceShape': faceShape,
+    'face': face,
     'eyes': eyes,
-    'eyebrows': eyebrows,
-    'nose': nose,
-    'mouth': mouth,
     'hair': hair,
-    'tattoo': tattoo,
+    'nose': nose,
+    'outfitVariant': outfitVariant,
   };
 
+  // =====================================================
+  // DESERIALIZATION
+  // =====================================================
+
+  /// Supports older saved appearances.
   factory NpcAppearance.fromJson(
       Map<String, dynamic> json,
       ) {
+    final seed = _readInt(json, ['seed']) ?? 0;
+
+    final career =
+        json['career']?.toString() ?? '';
+
+    final fallback = NpcAppearance.generate(
+      career: career,
+      seed: seed,
+    );
+
+    final angleName =
+        json['angle']?.toString() ?? 'front';
+
+    final angle = NpcAngle.values.firstWhere(
+          (value) => value.name == angleName,
+      orElse: () => NpcAngle.front,
+    );
+
     return NpcAppearance(
-      seed: json['seed'] as int,
-      career: json['career'] as String,
-      outfit: json['outfit'] as String,
-      angle: NpcAngle.values.byName(
-        json['angle'] as String,
-      ),
-      skinTone: json['skinTone'] as int,
-      faceShape: json['faceShape'] as int,
-      eyes: json['eyes'] as int,
-      eyebrows: json['eyebrows'] as int,
-      nose: json['nose'] as int,
-      mouth: json['mouth'] as int,
-      hair: json['hair'] as int,
-      tattoo: json['tattoo'] as int,
+      seed: seed,
+      career: career,
+      outfit: json['outfit']?.toString() ??
+          fallback.outfit,
+      angle: angle,
+      face: _readInt(
+        json,
+        ['face', 'skinTone'],
+      ) ??
+          fallback.face,
+      eyes: _readInt(
+        json,
+        ['eyes'],
+      ) ??
+          fallback.eyes,
+      hair: _readInt(
+        json,
+        ['hair', 'hairFront', 'hair_front'],
+      ) ??
+          fallback.hair,
+      nose: _readInt(
+        json,
+        ['nose'],
+      ) ??
+          fallback.nose,
+      outfitVariant: _readInt(
+        json,
+        ['outfitVariant', 'outfitIndex'],
+      ) ??
+          fallback.outfitVariant,
     );
   }
+
+  // =====================================================
+  // HELPERS
+  // =====================================================
+
+  static int? _readInt(
+      Map<String, dynamic> json,
+      List<String> keys,
+      ) {
+    for (final key in keys) {
+      final value = json[key];
+
+      if (value is int && value > 0) {
+        return value;
+      }
+
+      if (value is num && value > 0) {
+        return value.toInt();
+      }
+
+      if (value is String) {
+        final parsed = int.tryParse(value);
+
+        if (parsed != null && parsed > 0) {
+          return parsed;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  @override
+  String toString() => 'NpcAppearance('
+      'seed: $seed, '
+      'career: $career, '
+      'outfit: $outfit, '
+      'face: $face, '
+      'eyes: $eyes, '
+      'hair: $hair, '
+      'nose: $nose, '
+      'outfitVariant: $outfitVariant'
+      ')';
 }

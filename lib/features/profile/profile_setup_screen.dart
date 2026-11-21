@@ -52,8 +52,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   static const _genders = [
     'Woman',
     'Man',
-    'Non-binary',
-    'Prefer not to say',
+    'Others'
   ];
 
   static const _zodiacSymbols = {
