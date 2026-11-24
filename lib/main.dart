@@ -1,61 +1,150 @@
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'features/chat/chat_storage.dart';
 import 'features/auth/auth_gate.dart';
 
+// ==================================================
+// ORBIT - MAIN
+// ==================================================
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // --------------------------------------------------
-  // 1. FIREBASE INITIALIZATION
-  // --------------------------------------------------
+  // 1. Initialize Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // 2. Detect device and configure Firebase
+  await configureFirebase();
 
-  // --------------------------------------------------
-  // 2. FIREBASE EMULATOR CONFIGURATION
-  // --------------------------------------------------
-  // false = Firebase Cloud
-  // true  = Local Firebase Emulator (debug only)
-  const useFirebaseEmulators = false;
+  // 3. Load saved conversations
+  await ChatStore.instance.initialize();
 
-  if (kDebugMode && useFirebaseEmulators) {
-    const host = '10.0.2.2';
+  // 4. Launch ORBIT
+  runApp(const OrbitApp());
+}
 
+// ==================================================
+// AUTOMATIC FIREBASE CONFIGURATION
+// ==================================================
+Future<void> configureFirebase() async {
+  // Release mode always uses Firebase Cloud.
+  if (!kDebugMode) {
+    debugPrint(
+      'ORBIT Firebase: RELEASE -> CLOUD',
+    );
+    return;
+  }
+
+  // This configuration targets Android devices.
+  if (kIsWeb ||
+      defaultTargetPlatform != TargetPlatform.android) {
+    debugPrint(
+      'ORBIT Firebase: NON-ANDROID -> CLOUD',
+    );
+    return;
+  }
+
+  try {
+    // Detect the Android device type.
+    final deviceInfo = DeviceInfoPlugin();
+    final androidInfo = await deviceInfo.androidInfo;
+
+    final bool isPhysicalDevice =
+        androidInfo.isPhysicalDevice;
+
+    debugPrint(
+      'ORBIT Device: ${androidInfo.model}',
+    );
+
+    // ================================================
+    // PHYSICAL ANDROID DEVICE
+    // USB DEBUGGING / WIRELESS DEBUGGING
+    // ================================================
+
+    if (isPhysicalDevice) {
+      debugPrint(
+        'ORBIT Firebase: PHYSICAL DEVICE -> CLOUD',
+      );
+
+      // No emulator configuration needed.
+      // Firebase uses its default cloud endpoints.
+      return;
+    }
+
+    // ================================================
+    // ANDROID EMULATOR
+    // ================================================
+
+    debugPrint(
+      'ORBIT Firebase: ANDROID EMULATOR -> LOCAL',
+    );
+
+    // Android Emulator accesses the host PC
+    // using 10.0.2.2.
+    const String host = '10.0.2.2';
+
+    // Firebase Authentication Emulator
     await FirebaseAuth.instance.useAuthEmulator(
       host,
       9099,
     );
 
+    // Cloud Firestore Emulator
     FirebaseFirestore.instance.useFirestoreEmulator(
       host,
       8080,
     );
 
+    // Cloud Functions Emulator
     FirebaseFunctions.instanceFor(
       region: 'asia-southeast1',
     ).useFunctionsEmulator(
       host,
       5001,
     );
+
+    debugPrint(
+      'ORBIT Firebase: LOCAL EMULATORS CONFIGURED',
+    );
+
+    debugPrint(
+      'Auth: $host:9099',
+    );
+
+    debugPrint(
+      'Firestore: $host:8080',
+    );
+
+    debugPrint(
+      'Functions: $host:5001',
+    );
+
+  } catch (error) {
+    debugPrint(
+      'ORBIT Firebase: Device detection/config '
+          'failed: $error',
+    );
+
+    // Do not silently switch endpoints after a
+    // partial Firebase emulator configuration.
+    rethrow;
   }
-
-  // --------------------------------------------------
-  // 3. LOAD SAVED CONVERSATIONS
-  // --------------------------------------------------
-  await ChatStore.instance.initialize();
-
-  runApp(const OrbitApp());
 }
+
+// ==================================================
+// ORBIT APPLICATION
+// ==================================================
 
 class OrbitApp extends StatelessWidget {
   const OrbitApp({super.key});
@@ -66,20 +155,23 @@ class OrbitApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'ORBIT',
 
-      // --------------------------------------------------
-      // 4. GLOBAL APP THEME
-      // --------------------------------------------------
+      // ================================================
+      // GLOBAL APP THEME
+      // ================================================
+
       theme: AppTheme.darkTheme.copyWith(
         scaffoldBackgroundColor: Colors.transparent,
       ),
 
-      // --------------------------------------------------
-      // 5. GLOBAL COSMIC BACKGROUND
-      // --------------------------------------------------
+      // ================================================
+      // GLOBAL COSMIC BACKGROUND
+      // ================================================
+
       builder: (context, child) {
         return Stack(
           fit: StackFit.expand,
           children: [
+
             // Background image
             Positioned.fill(
               child: Image.asset(
@@ -88,14 +180,14 @@ class OrbitApp extends StatelessWidget {
               ),
             ),
 
-            // Dark overlay for text readability
+            // Dark overlay
             const Positioned.fill(
               child: ColoredBox(
                 color: Color(0x990B0914),
               ),
             ),
 
-            // Current app page / Navigator
+            // Current app screen
             if (child != null)
               Positioned.fill(
                 child: child,
@@ -104,9 +196,10 @@ class OrbitApp extends StatelessWidget {
         );
       },
 
-      // --------------------------------------------------
-      // 6. AUTHENTICATION GATE
-      // --------------------------------------------------
+      // ================================================
+      // AUTHENTICATION GATE
+      // ================================================
+
       home: const AuthGate(),
     );
   }

@@ -41,6 +41,7 @@ dependencies:
   cloud_firestore: ^7.1.0
   image_picker: ^1.2.4
   firebase_storage: ^14.0.1
+  device_info_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:
@@ -67,6 +68,7 @@ flutter:
   assets:
     - lib/core/assets/
     - lib/core/assets/icons/
+    - lib/core/assets/npc/
     - lib/core/assets/npc/front/faces/
     - lib/core/assets/npc/front/eyes/
     - lib/core/assets/npc/front/hair/

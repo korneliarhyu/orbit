@@ -9,7 +9,6 @@ import 'match_service.dart';
 import '../npc/npc_persona.dart';
 import '../npc/npc_profile_generator.dart';
 
-import '../npc/npc_appearance.dart';
 import '../npc/npc_avatar_widget.dart';
 
 class DiscoverScreen extends StatefulWidget {
@@ -24,30 +23,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   final _generator = NpcProfileGenerator();
   late final List<NpcPersona> _deck;
   late final AnimationController _swipeController;
-
-// Cache avatar berdasarkan NPC ID.
-// Mencegah wajah berubah ketika widget rebuild.
-  final Map<String, NpcAppearance> _appearanceCache = {};
-
-// Stable seed derived from NPC ID.
-// Avoid String.hashCode for persisted identity.
-  int _seedFromId(String id) {
-    var hash = 0;
-    for (final code in id.runes) {
-      hash = (hash * 31 + code) & 0x7fffffff;
-    }
-    return hash;
-  }
-
-  NpcAppearance _appearanceFor(NpcPersona npc) {
-    return _appearanceCache.putIfAbsent(
-      npc.id,
-          () => NpcAppearance.generate(
-        career: npc.career,
-        seed: _seedFromId(npc.id),
-      ),
-    );
-  }
 
   Animation<Offset> _motion = const AlwaysStoppedAnimation(Offset.zero);
   Offset _drag = Offset.zero;
@@ -97,14 +72,8 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
   void _nextNpc() {
     setState(() {
-      final swipedNpc = _deck.removeAt(0);
-
-      // Release appearance cache for swiped NPC.
-      _appearanceCache.remove(swipedNpc.id);
-
-      // Generate the next NPC.
+      _deck.removeAt(0);
       _deck.add(_generator.generate());
-
       _drag = Offset.zero;
     });
   }
@@ -380,13 +349,28 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                         2,
                     width: portraitWidth,
                     height: portraitHeight,
-                    child: NpcAvatarWidget(
-                      key: ValueKey(
-                        'npc-avatar-${npc.id}',
+                    child: ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (Rect bounds) {
+                        return const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.white,
+                            Colors.white,
+                            Color(0x99FFFFFF),
+                            Colors.transparent,
+                          ],
+                          stops: [0.0, 0.65, 0.85, 1.0],
+                        ).createShader(bounds);
+                      },
+                      child: NpcAvatarWidget(
+                        key: ValueKey('npc-avatar-${npc.id}'),
+                        avatarIndex: npc.avatarIndex,
+                        width: portraitWidth,
                       ),
-                      appearance: _appearanceFor(npc),
-                      size: portraitWidth,
                     ),
+
                   ),
                 ],
               );
@@ -430,12 +414,14 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    stops: [0.0, 0.35, 0.70, 1.0],
+                    stops: [0.0, 0.40, 0.58, 0.75, 0.92, 1.0,],
                     colors: [
-                      Color(0x000F0921),
-                      Color(0x000F0921),
-                      Color(0xB50F0921),
-                      Color(0xFA0F0921),
+                      Color(0x00130D23),
+                      Color(0x00130D23),
+                      Color(0x40130D23),
+                      Color(0xB3130D23),
+                      Color(0xFF130D23),
+                      Color(0xFF130D23),
                     ],
                   ),
                 ),
@@ -520,25 +506,15 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     );
   }
 
-  // Background cards only need a portrait, not three expensive blur layers.
+  // ==================================================
+  // BACKGROUND NPC CARD
+  // Shows complete NPC information before swiping
+  // ==================================================
+
   Widget _backCard(NpcPersona npc) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(28),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(
-            color: AppColors.primaryPink.withAlpha(95),
-            width: 2,
-          ),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _portrait(npc),
-            const ColoredBox(color: Color(0x44120A25)),
-          ],
-        ),
+    return RepaintBoundary(
+      child: IgnorePointer(
+        child: _npcCard(npc),
       ),
     );
   }
