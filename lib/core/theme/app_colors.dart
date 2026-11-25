@@ -1,55 +1,155 @@
-
 import 'package:flutter/material.dart';
 
 class AppColors {
-  // Background colors
-  static const Color background = Color(0xFF0B0914);
-  static const Color surface = Color(0xFF151526);
-  static const Color card = Color(0xFF1C1C31);
-  static const Color cardSoft = Color(0xFF23233A);
+  AppColors._();
 
-  // Main brand colors
-  static const Color primaryPink = Color(0xFFFF4EB8);
-  static const Color primaryPurple = Color(0xFF8A4DFF);
-  static const Color softLilac = Color(0xFFD6C2FF);
+  // ==========================================
+  // LUNAR NIGHT - DARK MODE
+  // ==========================================
+  static const Color background =
+  Color(0xFF12101D);
 
-  // Text colors
-  static const Color textPrimary = Color(0xFFF8F6FC);
-  static const Color textSecondary = Color(0xFFA8A1BD);
+  static const Color surface =
+  Color(0xFF1D192B);
 
-  // Additional colors
-  static const Color border = Color(0xFF2A2340);
-  static const Color success = Color(0xFF4ADE80);
-  static const Color danger = Color(0xFFFB7185);
+  static const Color elevatedSurface =
+  Color(0xFF2B253C);
 
-  // Main gradient
-  static const LinearGradient primaryGradient = LinearGradient(
+  static const Color primary =
+  Color(0xFFC8AEFF);
+
+  static const Color secondary =
+  Color(0xFFE6B8E1);
+
+  static const Color border =
+  Color(0xFF423753);
+
+  static const Color textPrimary =
+  Color(0xFFF7F2FF);
+
+  static const Color textSecondary =
+  Color(0xFFB9AEC9);
+
+  // ==========================================
+  // FUNCTIONAL COLORS
+  // ==========================================
+  static const Color success =
+  Color(0xFF81C9A7);
+
+  static const Color error =
+  Color(0xFFF29CA8);
+
+  static const Color warning =
+  Color(0xFFF2CE91);
+
+  static const Color onPrimary =
+  Color(0xFF20152F);
+
+  // ==========================================
+  // BACKWARD COMPATIBILITY
+  // ==========================================
+  static const Color card = surface;
+  static const Color cardSoft = elevatedSurface;
+
+  static const Color primaryPurple = primary;
+  static const Color primaryPink = secondary;
+  static const Color softLilac = primary;
+
+  static const Color danger = error;
+
+  // ==========================================
+  // PRIMARY GRADIENT
+  // ==========================================
+  static const LinearGradient primaryGradient =
+  LinearGradient(
     colors: [
-      primaryPink,
-      primaryPurple,
+      primary,
+      secondary,
     ],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  // Card gradient
-  static const LinearGradient cardGradient = LinearGradient(
+  // ==========================================
+  // CHAT BUBBLE GRADIENT
+  // ==========================================
+  static const LinearGradient messageGradient =
+  LinearGradient(
     colors: [
-      Color(0xFF241B3D),
-      Color(0xFF151526),
+      Color(0xFF9069B3),
+      Color(0xFF76528F),
     ],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  // Cosmic gradient
-  static const LinearGradient cosmicGradient = LinearGradient(
+  // ==========================================
+  // CARD GRADIENT
+  // ==========================================
+  static const LinearGradient cardGradient =
+  LinearGradient(
     colors: [
-      Color(0xFF1A0F3D),
-      Color(0xFF632C98),
-      Color(0xFFB43A92),
+      elevatedSurface,
+      surface,
     ],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
+
+  // ==========================================
+  // COSMIC GRADIENT
+  // ==========================================
+  static const LinearGradient cosmicGradient =
+  LinearGradient(
+    colors: [
+      Color(0xFF12101D),
+      Color(0xFF24192E),
+      Color(0xFF392344),
+    ],
+    begin: Alignment.topCenter,
+    end: Alignment.bottomRight,
+  );
+}
+
+// ==========================================
+// LUNAR DAWN - LIGHT MODE
+// ==========================================
+class AppLightColors {
+  AppLightColors._();
+
+  static const Color background =
+  Color(0xFFF8F5FC);
+
+  static const Color surface =
+  Color(0xFFFFFFFF);
+
+  static const Color elevatedSurface =
+  Color(0xFFF0EAF8);
+
+  static const Color primary =
+  Color(0xFF6945A3);
+
+  static const Color secondary =
+  Color(0xFF925283);
+
+  static const Color border =
+  Color(0xFFDED4EB);
+
+  static const Color textPrimary =
+  Color(0xFF241C35);
+
+  static const Color textSecondary =
+  Color(0xFF675A79);
+
+  static const Color success =
+  Color(0xFF247A53);
+
+  static const Color error =
+  Color(0xFFB83250);
+
+  static const Color warning =
+  Color(0xFF906016);
+
+  static const Color onPrimary =
+  Color(0xFFFFFFFF);
 }

@@ -183,7 +183,7 @@ class OrbitApp extends StatelessWidget {
             // Dark overlay
             const Positioned.fill(
               child: ColoredBox(
-                color: Color(0x990B0914),
+                color: Color(0x9912101D),
               ),
             ),
 

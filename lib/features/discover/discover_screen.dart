@@ -691,17 +691,15 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      // Show the global bg.jpg from main.dart, without repainting it.
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          Positioned.fill(
-            child: Image.asset(
-              'lib/core/assets/bg.jpg',
-              fit: BoxFit.cover,
-            ),
-          ),
+          // Same dim strength as the Chats tab and bottom navigation.
           const Positioned.fill(
-            child: ColoredBox(color: Color(0xB8090718)),
+            child: IgnorePointer(
+              child: ColoredBox(color: Color(0x8012101D)),
+            ),
           ),
           SafeArea(
             child: Center(

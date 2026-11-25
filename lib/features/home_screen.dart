@@ -1,10 +1,9 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/theme/app_colors.dart';
-import '../core/widgets/app_chat_tile.dart';
-
+import '../core/widgets/app_avatar.dart';
 import 'chat/chat_screen.dart';
 import 'chat/npc_chat_service.dart';
 import 'discover/discover_screen.dart';
@@ -12,13 +11,9 @@ import 'discover/match_service.dart';
 import 'profile/profile_screen.dart';
 
 // ============================================================
-// CHAT FILTER
+// ORBIT - LUNAR LAVENDER CHAT INBOX
 // ============================================================
-enum ChatFilter { all, unread, ended }
 
-// ============================================================
-// HOME SCREEN
-// ============================================================
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -27,35 +22,55 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final TextEditingController _searchController =
-  TextEditingController();
+  static const String _favoriteKey = 'orbit_favorite_npc_ids';
 
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  bool _showSearch = false;
   final PageController _pageController = PageController();
 
   late final Stream<List<OrbitMatch>> _matchesStream;
 
-  ChatFilter _selectedFilter = ChatFilter.all;
+  final Set<String> _favorites = <String>{};
   int _selectedTab = 0;
 
   @override
   void initState() {
     super.initState();
     _matchesStream = MatchService.instance.watchMatches();
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _favorites
+        ..clear()
+        ..addAll(prefs.getStringList(_favoriteKey) ?? const <String>[]);
+    });
+  }
+
+  Future<void> _toggleFavorite(String npcId) async {
+    setState(() {
+      if (!_favorites.add(npcId)) {
+        _favorites.remove(npcId);
+      }
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_favoriteKey, _favorites.toList());
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _pageController.dispose();
     super.dispose();
   }
 
-  // ==========================================================
-  // NAVIGATION
-  // ==========================================================
   void _goToTab(int index) {
     if (!_pageController.hasClients) return;
-
     _pageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 300),
@@ -64,50 +79,28 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openMatch(OrbitMatch match) {
-    MatchService.instance.markOpened(match.npcId).catchError(
-          (error) {
-        debugPrint('Could not mark match as opened: $error');
-      },
-    );
+    MatchService.instance.markOpened(match.npcId).catchError((error) {
+      debugPrint('Could not mark match as opened: $error');
+    });
 
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          npcId: match.npcId,
-        ),
+      MaterialPageRoute<void>(
+        builder: (_) => ChatScreen(npcId: match.npcId),
       ),
     );
   }
 
-  // ==========================================================
-  // SEARCH & FILTER
-  // ==========================================================
-  List<OrbitMatch> _filterMatches(
-      List<OrbitMatch> matches,
-      ) {
-    final query = _searchController.text
-        .trim()
-        .toLowerCase();
+  // Search only. Include active and ended conversations.
+  List<OrbitMatch> _filterMatches(List<OrbitMatch> matches) {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return matches;
 
     return matches.where((match) {
-      final matchesSearch =
-          match.name.toLowerCase().contains(query) ||
-              match.archetype.toLowerCase().contains(query) ||
-              (match.career?.toLowerCase().contains(query) ?? false);
-
-      final matchesFilter = switch (_selectedFilter) {
-        ChatFilter.all => !match.isEnded,
-        ChatFilter.unread => !match.isEnded && match.unread,
-        ChatFilter.ended => match.isEnded,
-      };
-
-      return matchesSearch && matchesFilter;
+      return match.name.toLowerCase().contains(query) ||
+          match.archetype.toLowerCase().contains(query) ||
+          (match.career?.toLowerCase().contains(query) ?? false);
     }).toList(growable: false);
   }
-
-  // ==========================================================
-  // MAIN LAYOUT
-  // ==========================================================
 
   @override
   Widget build(BuildContext context) {
@@ -115,9 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: Colors.transparent,
       body: PageView(
         controller: _pageController,
-        onPageChanged: (index) {
-          setState(() => _selectedTab = index);
-        },
+        onPageChanged: (index) => setState(() => _selectedTab = index),
         children: [
           _buildChatsPage(),
           const DiscoverScreen(),
@@ -129,132 +120,160 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ==========================================================
-  // CHATS PAGE
-  // ==========================================================
+  // ============================================================
+  // WHATSAPP-INSPIRED INBOX - DIM GALAXY, NO DIVIDERS
+  // ============================================================
+
+  void _toggleSearch() {
+    setState(() {
+      _showSearch = !_showSearch;
+      if (!_showSearch) _searchController.clear();
+    });
+
+    if (_showSearch) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchFocusNode.requestFocus();
+      });
+    } else {
+      _searchFocusNode.unfocus();
+    }
+  }
 
   Widget _buildChatsPage() {
-    return SafeArea(
-      top: true,
-      bottom: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          20,
-          12,
-          20,
-          0,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // The existing galaxy is painted by main.dart.
+        // This overlay dims it only on the Chats tab.
+        const Positioned.fill(
+          child: IgnorePointer(
+            child: ColoredBox(
+              color: Color(0x8012101D),
+            ),
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(),
-
-            const SizedBox(height: 24),
-
-            _buildSearchBar(),
-
-            const SizedBox(height: 18),
-
-            _buildFilters(),
-
-            const SizedBox(height: 22),
-
-            const Text(
-              'Your Messages',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
+        SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 8),
+                child: _buildHeader(context),
               ),
-            ),
 
-            const SizedBox(height: 6),
-
-            const Text(
-              'Stay connected across your universe.',
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            Expanded(
-              child: Container(
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: const Color(0xF0181424),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: AppColors.border,
-                  ),
+              // WhatsApp-style: search is shown on demand.
+              if (_showSearch)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  child: _buildSearchBar(),
                 ),
-                child: _buildMatchesList(),
-              ),
-            ),
 
-            const SizedBox(height: 12),
-          ],
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                  child: _buildMatchesList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Image.asset(
+          'lib/core/assets/orbit_wordmark.png',
+          width: 80,
+          fit: BoxFit.contain,
+        ),
+
+        const SizedBox(width: 14),
+
+        Expanded(
+          child: SizedBox(
+            height: 42,
+            child: _buildSearchBar(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.93),
+        borderRadius: BorderRadius.circular(25),
+      ),
+      child: TextField(
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        onChanged: (_) => setState(() {}),
+        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: 'Search conversations...',
+          hintStyle: const TextStyle(color: AppColors.textSecondary),
+          prefixIcon: const Icon(
+            Icons.search_rounded,
+            color: AppColors.textSecondary,
+          ),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+            tooltip: 'Clear search',
+            icon: const Icon(Icons.close_rounded, size: 18),
+            color: AppColors.textSecondary,
+            onPressed: () {
+              _searchController.clear();
+              setState(() {});
+            },
+          )
+              : null,
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          filled: false,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
         ),
       ),
     );
   }
-
-  // ==========================================================
-  // MATCH LIST
-  // ==========================================================
 
   Widget _buildMatchesList() {
     return StreamBuilder<List<OrbitMatch>>(
       stream: _matchesStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return const Center(
-            child: Text(
-              'Unable to load matches',
-              style: TextStyle(
-                color: AppColors.textSecondary,
-              ),
-            ),
-          );
+          return _status('Unable to load matches.');
         }
-
         if (!snapshot.hasData) {
           return const Center(
-            child: CircularProgressIndicator(
-              color: AppColors.primaryPink,
-            ),
+            child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
 
         final allMatches = snapshot.data!;
         final matches = _filterMatches(allMatches);
-
         if (matches.isEmpty) {
-          return _buildEmptyState(
-            noMatchesYet: allMatches.isEmpty,
-          );
+          return _buildEmptyState(noMatchesYet: allMatches.isEmpty);
         }
 
-        return ListView.separated(
-          padding: const EdgeInsets.symmetric(
-            vertical: 6,
-          ),
+        // WhatsApp-like conversation rows with no dividers or enclosing card.
+        return ListView.builder(
+          padding: EdgeInsets.zero,
           itemCount: matches.length,
-          separatorBuilder: (_, _) => const Divider(
-            height: 1,
-            indent: 84,
-            endIndent: 16,
-            color: AppColors.border,
-          ),
           itemBuilder: (context, index) {
             final match = matches[index];
-
-            // Each tile watches its own latest message.
             return _MatchConversationTile(
               key: ValueKey(match.npcId),
               match: match,
+              isFavorite: _favorites.contains(match.npcId),
+              onToggleFavorite: () => _toggleFavorite(match.npcId),
               onTap: () => _openMatch(match),
             );
           },
@@ -263,223 +282,77 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ==========================================================
-  // ORBIT HEADER
-  // ==========================================================
+  Widget _status(String text) => Center(
+    child: Text(text, style: const TextStyle(color: AppColors.textSecondary)),
+  );
 
-  Widget _buildHeader() {
-    return SizedBox(
-      height: 36,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Image.asset(
-          'lib/core/assets/orbit_logo_long.png',
-          width: 150,
-          height: 34,
-          fit: BoxFit.contain,
-          alignment: Alignment.centerLeft,
-        ),
-      ),
-    );
-  }
-
-  // ==========================================================
-  // SEARCH BAR
-  // ==========================================================
-
-  Widget _buildSearchBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: AppColors.border,
-        ),
-      ),
-      child: TextField(
-        controller: _searchController,
-        onChanged: (_) => setState(() {}),
-        style: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 14,
-        ),
-        decoration: const InputDecoration(
-          hintText: 'Search conversations...',
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            color: AppColors.textSecondary,
-          ),
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          filled: false,
-          contentPadding: EdgeInsets.symmetric(
-            vertical: 14,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ==========================================================
-  // FILTER CHIPS
-  // ==========================================================
-
-  Widget _buildFilters() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final filter in ChatFilter.values)
-          ChoiceChip(
-            label: Text(
-              switch (filter) {
-                ChatFilter.all => 'All',
-                ChatFilter.unread => 'Unread',
-                ChatFilter.ended => 'Ended',
-              },
-            ),
-            selected: _selectedFilter == filter,
-            onSelected: (_) {
-              setState(() => _selectedFilter = filter);
-            },
-            showCheckmark: false,
-            selectedColor: AppColors.primaryPurple,
-            backgroundColor: AppColors.cardSoft,
-            side: BorderSide(
-              color: _selectedFilter == filter
-                  ? AppColors.primaryPurple
-                  : AppColors.border,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(30),
-            ),
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 6,
-            ),
-            labelStyle: TextStyle(
-              color: _selectedFilter == filter
-                  ? Colors.white
-                  : AppColors.softLilac,
-              fontSize: 12,
-              fontWeight: _selectedFilter == filter
-                  ? FontWeight.w600
-                  : FontWeight.w400,
-            ),
-          ),
-      ],
-    );
-  }
-
-  // ==========================================================
-  // EMPTY STATE
-  // ==========================================================
-
-  Widget _buildEmptyState({
-    required bool noMatchesYet,
-  }) {
-    final isUnread =
-        _selectedFilter == ChatFilter.unread;
-
-    final hasSearch =
-        _searchController.text.trim().isNotEmpty;
-
+  Widget _buildEmptyState({required bool noMatchesYet}) {
+    final hasSearch = _searchController.text.trim().isNotEmpty;
     final title = noMatchesYet
         ? 'No connections yet ✦'
         : hasSearch
         ? 'No conversations found'
-        : isUnread
-        ? 'All caught up ✦'
-        : 'No conversations found';
-
+        : 'No conversations yet';
     final subtitle = noMatchesYet
         ? 'Your next cosmic connection is just a swipe away.'
         : hasSearch
         ? 'Try another search.'
-        : isUnread
-        ? 'You have no unread messages.'
-        : 'Try another search.';
+        : 'Your conversations will appear here.';
 
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.favorite_border_rounded,
-              color: AppColors.primaryPink,
-              size: 52,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.chat_bubble_outline_rounded,
+            color: AppColors.primary,
+            size: 42,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
             ),
-
-            const SizedBox(height: 18),
-
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 19,
-                fontWeight: FontWeight.bold,
-              ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+          if (noMatchesYet) ...[
+            const SizedBox(height: 20),
+            TextButton.icon(
+              onPressed: () => _goToTab(1),
+              icon: const Icon(Icons.explore_outlined),
+              label: const Text('Explore Discover'),
             ),
-
-            const SizedBox(height: 10),
-
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-              ),
-            ),
-
-            if (noMatchesYet) ...[
-              const SizedBox(height: 24),
-
-              ElevatedButton.icon(
-                onPressed: () => _goToTab(1),
-                icon: const Icon(
-                  Icons.explore_rounded,
-                ),
-                label: const Text('Explore Discover'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryPurple,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
           ],
-        ),
+        ],
       ),
     );
   }
-
-  // ==========================================================
-  // BOTTOM NAVIGATION
-  // ==========================================================
 
   Widget _buildBottomNavigation() {
     return BottomNavigationBar(
       currentIndex: _selectedTab,
       onTap: _goToTab,
       type: BottomNavigationBarType.fixed,
-      backgroundColor: Colors.transparent,
+      // Match the same Lunar Night dim used in Chats and Discover.
+      backgroundColor: const Color(0x8012101D),
       elevation: 0,
-      selectedItemColor: AppColors.primaryPink,
+      selectedItemColor: AppColors.primary,
       unselectedItemColor: AppColors.textSecondary,
       selectedFontSize: 11,
       unselectedFontSize: 11,
       items: const [
         BottomNavigationBarItem(
-          icon: Icon(
-            Icons.chat_bubble_outline_rounded,
-          ),
-          activeIcon: Icon(
-            Icons.chat_bubble_rounded,
-          ),
+          icon: Icon(Icons.chat_bubble_outline_rounded),
+          activeIcon: Icon(Icons.chat_bubble_rounded),
           label: 'Chats',
         ),
         BottomNavigationBarItem(
@@ -487,7 +360,6 @@ class _HomeScreenState extends State<HomeScreen> {
           activeIcon: Icon(Icons.explore_rounded),
           label: 'Discover',
         ),
-        // UPCOMING FEATURES
         BottomNavigationBarItem(
           icon: Icon(Icons.public_outlined),
           activeIcon: Icon(Icons.public_rounded),
@@ -504,50 +376,49 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ============================================================
-// REAL-TIME CONVERSATION TILE
+// REAL-TIME CONVERSATION ROW
 // ============================================================
 
 class _MatchConversationTile extends StatefulWidget {
-  final OrbitMatch match;
-  final VoidCallback onTap;
-
   const _MatchConversationTile({
     super.key,
     required this.match,
     required this.onTap,
+    required this.isFavorite,
+    required this.onToggleFavorite,
   });
 
+  final OrbitMatch match;
+  final VoidCallback onTap;
+  final bool isFavorite;
+  final VoidCallback onToggleFavorite;
+
   @override
-  State<_MatchConversationTile> createState() =>
-      _MatchConversationTileState();
+  State<_MatchConversationTile> createState() => _MatchConversationTileState();
 }
 
-class _MatchConversationTileState
-    extends State<_MatchConversationTile> {
-
-  late Stream<QuerySnapshot<Map<String, dynamic>>>
-  _latestMessageStream;
+class _MatchConversationTileState extends State<_MatchConversationTile> {
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _latestMessageStream;
+  late Stream<DocumentSnapshot<Map<String, dynamic>>> _matchDetailStream;
 
   @override
   void initState() {
     super.initState();
-    _initializeStream();
+    _initializeStreams();
   }
 
   @override
-  void didUpdateWidget(
-      covariant _MatchConversationTile oldWidget,
-      ) {
+  void didUpdateWidget(covariant _MatchConversationTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-
     if (oldWidget.match.npcId != widget.match.npcId) {
-      _initializeStream();
+      _initializeStreams();
     }
   }
 
-  void _initializeStream() {
-    // Listen to only ONE message, not the full chat history.
-    _latestMessageStream = NpcChatService.instance
+  void _initializeStreams() {
+    final service = NpcChatService.instance;
+    _matchDetailStream = service.watchMatch(widget.match.npcId);
+    _latestMessageStream = service
         .matchRef(widget.match.npcId)
         .collection('messages')
         .orderBy('createdAt', descending: true)
@@ -558,19 +429,13 @@ class _MatchConversationTileState
   String _formatMessageTime(DateTime date) {
     final local = date.toLocal();
     final now = DateTime.now();
-
-    final isToday =
-        now.year == local.year &&
-            now.month == local.month &&
-            now.day == local.day;
-
-    if (isToday) {
+    if (now.year == local.year &&
+        now.month == local.month &&
+        now.day == local.day) {
       final hour = local.hour.toString().padLeft(2, '0');
       final minute = local.minute.toString().padLeft(2, '0');
-
       return '$hour:$minute';
     }
-
     return '${local.day}/${local.month}';
   }
 
@@ -578,44 +443,141 @@ class _MatchConversationTileState
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _latestMessageStream,
-      builder: (context, snapshot) {
+      builder: (context, messageSnapshot) {
         Map<String, dynamic>? latest;
-
-        if (snapshot.hasData &&
-            snapshot.data!.docs.isNotEmpty) {
-          latest = snapshot.data!.docs.first.data();
+        if (messageSnapshot.hasData && messageSnapshot.data!.docs.isNotEmpty) {
+          latest = messageSnapshot.data!.docs.first.data();
         }
-
         final lastText = latest?['text'] as String?;
         final sender = latest?['sender'] as String?;
         final createdAt = latest?['createdAt'];
 
-        // Fall back to the original match message.
         String preview = widget.match.preview;
         String time = widget.match.timeLabel;
-
-        if (lastText != null &&
-            lastText.trim().isNotEmpty) {
-          preview = sender == 'player'
-              ? 'You: ${lastText.trim()}'
-              : lastText.trim();
+        if (lastText != null && lastText.trim().isNotEmpty) {
+          preview = sender == 'player' ? 'You: ${lastText.trim()}' : lastText.trim();
         }
-
         if (createdAt is Timestamp) {
           time = _formatMessageTime(createdAt.toDate());
         }
+        if (widget.match.isEnded) preview = 'Ended · $preview';
 
-        return OrbitChatTile(
-          name: widget.match.name,
-          message: widget.match.isEnded
-              ? 'Ended · $preview'
-              : preview,
-          time: time,
-          unreadCount: widget.match.unread ? 1 : 0,
-          isOnline: false,
-          isGroup: false,
-          avatarColor: AppColors.primaryPurple,
-          onTap: widget.onTap,
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: _matchDetailStream,
+          builder: (context, detailSnapshot) {
+            final avatarIndex = OrbitAvatar.indexFromMatchData(
+              detailSnapshot.data?.data(),
+            );
+
+            return Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: widget.onTap,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  child: Row(
+                    children: [
+                      OrbitAvatar(
+                        name: widget.match.name,
+                        radius: 29,
+                        avatarIndex: avatarIndex,
+                        // A wider crop: show hair and more of the shoulders.
+                        portraitScale: 1.38,
+                        highlighted: widget.match.unread,
+                      ),
+                      const SizedBox(width: 13),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    widget.match.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 17,
+                                      fontWeight: widget.match.unread
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  time,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    preview,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: widget.match.unread
+                                          ? AppColors.textPrimary
+                                          : AppColors.textSecondary,
+                                      fontSize: 13,
+                                      fontWeight: widget.match.unread
+                                          ? FontWeight.w600
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                ),
+                                if (widget.match.unread) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    height: 21,
+                                    width: 21,
+                                    alignment: Alignment.center,
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.primary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Text('1',
+                                        style: TextStyle(
+                                            color: AppColors.onPrimary,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700)),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        tooltip: widget.isFavorite
+                            ? 'Remove from favorites'
+                            : 'Add to favorites',
+                        onPressed: widget.onToggleFavorite,
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 19,
+                        icon: Icon(
+                          widget.isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                          color: widget.isFavorite
+                              ? AppColors.secondary
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );
