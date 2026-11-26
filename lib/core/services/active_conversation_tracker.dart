@@ -4,10 +4,10 @@ class ActiveConversationTracker {
   ActiveConversationTracker._();
 
   static final ActiveConversationTracker instance =
-  ActiveConversationTracker._();
+      ActiveConversationTracker._();
 
   final _conversations =
-  <Object, ({String npcId, ModalRoute<dynamic> route})>{};
+      <Object, ({String npcId, ModalRoute<dynamic> route})>{};
 
   void register({
     required Object owner,
@@ -19,10 +19,7 @@ class ActiveConversationTracker {
       return;
     }
 
-    _conversations[owner] = (
-    npcId: npcId,
-    route: route,
-    );
+    _conversations[owner] = (npcId: npcId, route: route);
   }
 
   void unregister(Object owner) {

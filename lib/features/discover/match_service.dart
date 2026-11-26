@@ -28,6 +28,7 @@ class OrbitMatch {
   final String name;
   final String archetype;
   final String? career;
+  final int? avatarIndex;
   final String preview;
   final bool unread;
   final Timestamp? matchedAt;
@@ -38,6 +39,7 @@ class OrbitMatch {
     required this.name,
     required this.archetype,
     this.career,
+    this.avatarIndex,
     required this.preview,
     required this.unread,
     required this.matchedAt,
@@ -56,6 +58,7 @@ class OrbitMatch {
       name: data['name'] as String? ?? 'Unknown',
       archetype: data['archetype'] as String? ?? '',
       career: data['career'] as String?,
+      avatarIndex: (data['avatarIndex'] as num?)?.toInt(),
       preview: firstMessage != null && firstMessage.trim().isNotEmpty
           ? firstMessage
           : "It's a match! Say hello ✨",

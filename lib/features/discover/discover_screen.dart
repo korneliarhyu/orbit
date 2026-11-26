@@ -19,6 +19,7 @@ import 'match_service.dart';
 import '../npc/npc_persona.dart';
 import '../npc/npc_profile_generator.dart';
 import '../npc/npc_avatar_widget.dart';
+
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key, this.locationLabel});
 
@@ -76,10 +77,10 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
   // One animation function for flying away and returning to center.
   Future<void> _animateCard(
-      Offset target, {
-        required Duration duration,
-        required Curve curve,
-      }) async {
+    Offset target, {
+    required Duration duration,
+    required Curve curve,
+  }) async {
     _swipeController.duration = duration;
     _motion = _swipeController.drive(
       Tween<Offset>(begin: _drag, end: target).chain(CurveTween(curve: curve)),
@@ -173,6 +174,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   Future<void> _showMatch(NpcPersona npc, MatchOutcome result) async {
     final firstMessage = result.firstMessage;
     final notificationService = OrbitNotificationService.instance;
+    final notificationOwner = Object();
     bool notificationScheduled = false;
     bool notificationShown = false;
 
@@ -192,6 +194,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
             notificationService.show(
               dialogContext,
+              owner: notificationOwner,
               name: npc.name,
               message: firstMessage,
               avatarIndex: npc.avatarIndex,
@@ -271,17 +274,24 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                 // SIGNATURE STAR DIVIDER
                 const Row(
                   children: [
-                    Expanded(child: Divider(color: AppColors.border, height: 1)),
+                    Expanded(
+                      child: Divider(color: AppColors.border, height: 1),
+                    ),
 
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
                       child: Text(
                         '✧',
-                        style: TextStyle(color: AppColors.primary, fontSize: 16),
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 16,
+                        ),
                       ),
                     ),
 
-                    Expanded(child: Divider(color: AppColors.border, height: 1)),
+                    Expanded(
+                      child: Divider(color: AppColors.border, height: 1),
+                    ),
                   ],
                 ),
 
@@ -317,15 +327,15 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     );
 
     if (notificationShown) {
-      notificationService.dismiss();
+      notificationService.dismiss(owner: notificationOwner);
     }
 
     // CHAT NAVIGATION
     if (!mounted || startChat != true) return;
 
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => ChatScreen(npcId: npc.id)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => ChatScreen(npcId: npc.id)));
   }
 
   // DISCOVER PREFERENCES & DETAILS
@@ -777,21 +787,21 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           onHorizontalDragUpdate: _busy
               ? null
               : (details) {
-            setState(
-                  () => _drag = Offset(
-                _drag.dx + details.delta.dx,
-                (_drag.dy + details.delta.dy)
-                    .clamp(-55.0, 55.0)
-                    .toDouble(),
-              ),
-            );
-          },
+                  setState(
+                    () => _drag = Offset(
+                      _drag.dx + details.delta.dx,
+                      (_drag.dy + details.delta.dy)
+                          .clamp(-55.0, 55.0)
+                          .toDouble(),
+                    ),
+                  );
+                },
           onHorizontalDragEnd: _busy ? null : _onDragEnd,
           onHorizontalDragCancel: _busy
               ? null
               : () {
-            _resetCard();
-          },
+                  _resetCard();
+                },
           child: Transform.translate(
             offset: _drag,
             child: Transform.rotate(

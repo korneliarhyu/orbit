@@ -211,7 +211,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           content: const Text(
             'This conversation will end. '
-                'You can still read the chat history.',
+            'You can still read the chat history.',
             style: TextStyle(color: AppColors.textSecondary),
           ),
           actions: [
@@ -271,7 +271,7 @@ class _ChatScreenState extends State<ChatScreen> {
       delay.isNegative
           ? Duration.zero
           : delay + const Duration(milliseconds: 30),
-          () {
+      () {
         _nextReveal = null;
 
         if (mounted) {
@@ -328,7 +328,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (snapshot.hasError) {
           return _status(
             'Cannot load this match. '
-                'Check your connection.',
+            'Check your connection.',
           );
         }
 
@@ -486,12 +486,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildHeader(
-      String name,
-      String subtitle, {
-        int? avatarIndex,
-        String? intimacyLabel,
-        bool ended = false,
-      }) {
+    String name,
+    String subtitle, {
+    int? avatarIndex,
+    String? intimacyLabel,
+    bool ended = false,
+  }) {
     final hasPilotCareer = subtitle.toLowerCase().contains('pilot');
 
     return Container(
@@ -723,8 +723,8 @@ class _ChatScreenState extends State<ChatScreen> {
         // NPC typing indicator
         final showTyping =
             !ended &&
-                ((_replyRunning && awaitingMessageRead && !hasVisibleReply) ||
-                    upcomingReveal != null);
+            ((_replyRunning && awaitingMessageRead && !hasVisibleReply) ||
+                upcomingReveal != null);
 
         return _messageList(
           entries,
@@ -740,11 +740,11 @@ class _ChatScreenState extends State<ChatScreen> {
   // MESSAGE LIST WITH DATE SEPARATORS
   // ====================================================
   Widget _messageList(
-      List<_ChatEntry> entries, {
-        required String companionName,
-        int? avatarIndex,
-        String? typingName,
-      }) {
+    List<_ChatEntry> entries, {
+    required String companionName,
+    int? avatarIndex,
+    String? typingName,
+  }) {
     if (entries.isEmpty && typingName == null) {
       return _status("It's a match! Say hello 💜");
     }
@@ -765,7 +765,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
         final showDate =
             entry.at != null &&
-                (previous?.at == null || !_sameDay(previous!.at!, entry.at!));
+            (previous?.at == null || !_sameDay(previous!.at!, entry.at!));
 
         return Column(
           children: [
@@ -848,10 +848,10 @@ class _ChatScreenState extends State<ChatScreen> {
   // LUNAR LAVENDER MESSAGE BUBBLES
   // ====================================================
   Widget _buildMessageBubble(
-      _ChatEntry message, {
-        required String companionName,
-        int? avatarIndex,
-      }) {
+    _ChatEntry message, {
+    required String companionName,
+    int? avatarIndex,
+  }) {
     final mine = message.isMine;
     final screenWidth = MediaQuery.sizeOf(context).width;
     final maxBubbleWidth = screenWidth * (mine ? 0.76 : 0.68);
@@ -1047,29 +1047,29 @@ class _ChatScreenState extends State<ChatScreen> {
                     onPressed: _sending
                         ? null
                         : () {
-                      final selection = _controller.selection;
+                            final selection = _controller.selection;
 
-                      final text = _controller.text;
+                            final text = _controller.text;
 
-                      final start = selection.isValid
-                          ? selection.start
-                          : text.length;
+                            final start = selection.isValid
+                                ? selection.start
+                                : text.length;
 
-                      final end = selection.isValid
-                          ? selection.end
-                          : text.length;
+                            final end = selection.isValid
+                                ? selection.end
+                                : text.length;
 
-                      const emoji = '💜';
+                            const emoji = '💜';
 
-                      _controller.value = TextEditingValue(
-                        text: text.replaceRange(start, end, emoji),
-                        selection: TextSelection.collapsed(
-                          offset: start + emoji.length,
-                        ),
-                      );
+                            _controller.value = TextEditingValue(
+                              text: text.replaceRange(start, end, emoji),
+                              selection: TextSelection.collapsed(
+                                offset: start + emoji.length,
+                              ),
+                            );
 
-                      setState(() {});
-                    },
+                            setState(() {});
+                          },
                     icon: const Icon(
                       Icons.sentiment_satisfied_alt_outlined,
                       color: AppColors.textSecondary,
@@ -1174,7 +1174,7 @@ Widget _endedChatBanner(bool endedByNpc) {
     child: Text(
       endedByNpc
           ? 'This character decided to end '
-          'the connection.'
+                'the connection.'
           : 'You ended this connection.',
       textAlign: TextAlign.center,
       style: const TextStyle(color: AppColors.softLilac),

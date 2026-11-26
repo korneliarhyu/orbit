@@ -13,6 +13,7 @@ import 'features/auth/auth_gate.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_colors.dart';
+import 'core/services/global_message_listener.dart';
 
 // ==================================================
 // ORBIT - MAIN
@@ -108,12 +109,36 @@ Future<void> configureFirebase() async {
 // ==================================================
 // ORBIT APPLICATION
 // ==================================================
-class OrbitApp extends StatelessWidget {
+class OrbitApp extends StatefulWidget {
   const OrbitApp({super.key});
+
+  @override
+  State<OrbitApp> createState() => _OrbitAppState();
+}
+
+class _OrbitAppState extends State<OrbitApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  late final GlobalMessageListener _messageListener;
+
+  @override
+  void initState() {
+    super.initState();
+    _messageListener = GlobalMessageListener(navigatorKey: _navigatorKey);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _messageListener.start();
+    });
+  }
+
+  @override
+  void dispose() {
+    _messageListener.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'ORBIT',
 
