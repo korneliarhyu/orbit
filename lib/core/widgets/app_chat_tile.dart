@@ -1,18 +1,11 @@
-
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_text_styles.dart';
+import '../constants/app_spacing.dart';
+import 'app_avatar.dart';
 
 class OrbitChatTile extends StatelessWidget {
-  final String name;
-  final String message;
-  final String time;
-  final int unreadCount;
-  final bool isOnline;
-  final bool isGroup;
-  final Color avatarColor;
-  final VoidCallback? onTap;
-
   const OrbitChatTile({
     super.key,
     required this.name,
@@ -21,33 +14,55 @@ class OrbitChatTile extends StatelessWidget {
     this.unreadCount = 0,
     this.isOnline = false,
     this.isGroup = false,
-    this.avatarColor = AppColors.primaryPurple,
+    this.avatarColor = AppColors.primary,
+    this.avatarIndex,
+    this.isFavorite = false,
+    this.onToggleFavorite,
     this.onTap,
   });
 
+  final String name, message, time;
+  final int unreadCount;
+  final bool isOnline, isGroup, isFavorite;
+  final Color avatarColor;
+  final int? avatarIndex;
+  final VoidCallback? onToggleFavorite, onTap;
+
   @override
   Widget build(BuildContext context) {
+    final unread = unreadCount > 0;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
+            vertical: AppSpacing.conversationVertical,
           ),
           child: Row(
             children: [
-              _buildAvatar(),
-
-              const SizedBox(width: 14),
-
+              if (isGroup)
+                CircleAvatar(
+                  radius: 29,
+                  backgroundColor: avatarColor,
+                  child: const Icon(
+                    Icons.groups_rounded,
+                    color: AppColors.onPrimary,
+                  ),
+                )
+              else
+                OrbitAvatar(
+                  name: name,
+                  radius: 29,
+                  avatarIndex: avatarIndex,
+                  highlighted: unread,
+                  isOnline: isOnline,
+                ),
+              const SizedBox(width: AppSpacing.avatarGap),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                  CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Name and time
                     Row(
                       children: [
                         Expanded(
@@ -55,31 +70,18 @@ class OrbitChatTile extends StatelessWidget {
                             name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                            style: AppTextStyles.title.copyWith(
+                              fontWeight: unread
+                                  ? FontWeight.w700
+                                  : FontWeight.w600,
                             ),
                           ),
                         ),
-
-                        const SizedBox(width: 8),
-
-                        Text(
-                          time,
-                          style: TextStyle(
-                            color: unreadCount > 0
-                                ? AppColors.primaryPink
-                                : AppColors.textSecondary,
-                            fontSize: 11,
-                          ),
-                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Text(time, style: AppTextStyles.timestamp),
                       ],
                     ),
-
-                    const SizedBox(height: 6),
-
-                    // Last message and unread badge
+                    const SizedBox(height: AppSpacing.xs),
                     Row(
                       children: [
                         Expanded(
@@ -87,42 +89,36 @@ class OrbitChatTile extends StatelessWidget {
                             message,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: unreadCount > 0
+                            style: AppTextStyles.bodyMuted.copyWith(
+                              color: unread
                                   ? AppColors.textPrimary
                                   : AppColors.textSecondary,
-                              fontSize: 13,
-                              fontWeight: unreadCount > 0
-                                  ? FontWeight.w500
+                              fontWeight: unread
+                                  ? FontWeight.w600
                                   : FontWeight.w400,
                             ),
                           ),
                         ),
-
-                        if (unreadCount > 0) ...[
-                          const SizedBox(width: 8),
-
+                        if (unread) ...[
+                          const SizedBox(width: AppSpacing.sm),
                           Container(
                             constraints: const BoxConstraints(
-                              minWidth: 20,
-                              minHeight: 20,
+                              minWidth: 21,
+                              minHeight: 21,
                             ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
                             alignment: Alignment.center,
                             decoration: const BoxDecoration(
-                              color: AppColors.primaryPink,
-                              shape: BoxShape.circle,
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(20),
+                              ),
                             ),
                             child: Text(
-                              unreadCount > 99
-                                  ? '99+'
-                                  : '$unreadCount',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                              unreadCount > 99 ? '99+' : '$unreadCount',
+                              style: AppTextStyles.small.copyWith(
+                                color: AppColors.onPrimary,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -132,76 +128,25 @@ class OrbitChatTile extends StatelessWidget {
                   ],
                 ),
               ),
+              if (onToggleFavorite != null) ...[
+                const SizedBox(width: AppSpacing.xs),
+                IconButton(
+                  tooltip: isFavorite
+                      ? 'Remove from favorites'
+                      : 'Add to favorites',
+                  onPressed: onToggleFavorite,
+                  iconSize: 19,
+                  icon: Icon(
+                    isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                    color: isFavorite
+                        ? AppColors.secondary
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildAvatar() {
-    return SizedBox(
-      width: 54,
-      height: 54,
-      child: Stack(
-        children: [
-          Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  avatarColor,
-                  const Color(0xFF2A1946),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              border: Border.all(
-                color: isOnline
-                    ? AppColors.primaryPink
-                    : AppColors.border,
-                width: 1.5,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: isGroup
-                ? const Icon(
-              Icons.groups_rounded,
-              color: Colors.white,
-              size: 26,
-            )
-                : Text(
-              name.isNotEmpty
-                  ? name[0].toUpperCase()
-                  : '?',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-
-          if (isOnline)
-            Positioned(
-              right: 1,
-              bottom: 1,
-              child: Container(
-                width: 13,
-                height: 13,
-                decoration: BoxDecoration(
-                  color: AppColors.success,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.background,
-                    width: 2,
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }

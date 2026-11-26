@@ -52,6 +52,10 @@ export const sendPlayerMessage = onCall(
         sender: "player",
         text: text.trim(),
         createdAt: FieldValue.serverTimestamp(),
+
+        // Message delivery & read receipts
+        deliveredAt: null,
+        readAt: null,
       });
     });
 

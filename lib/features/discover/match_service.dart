@@ -1,6 +1,8 @@
 import 'dart:math';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
 import '../npc/npc_persona.dart';
 
 // ============================================================
@@ -42,13 +44,12 @@ class OrbitMatch {
     required this.relationshipStatus,
   });
 
-  factory OrbitMatch.fromDoc(
-      QueryDocumentSnapshot<Map<String, dynamic>> doc,
-      ) {
+  factory OrbitMatch.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
 
     final firstMessage = data['firstMessage'] as String?;
-    final relationshipStatus = data['relationshipStatus'] as String? ?? 'active';
+    final relationshipStatus =
+        data['relationshipStatus'] as String? ?? 'active';
 
     return OrbitMatch(
       npcId: doc.id,
@@ -58,7 +59,10 @@ class OrbitMatch {
       preview: firstMessage != null && firstMessage.trim().isNotEmpty
           ? firstMessage
           : "It's a match! Say hello ✨",
-      unread: relationshipStatus == 'active' && data['npcStarts'] == true && data['opened'] != true,
+      unread:
+          relationshipStatus == 'active' &&
+          data['npcStarts'] == true &&
+          data['opened'] != true,
       matchedAt: data['matchedAt'] as Timestamp?,
       relationshipStatus: relationshipStatus,
     );
@@ -80,6 +84,7 @@ class OrbitMatch {
 
     return '${date.day}/${date.month}';
   }
+
   // CHECK WHETHER RELATIONSHIP HAS ENDED
   bool get isEnded => relationshipStatus != 'active';
 }
@@ -157,8 +162,7 @@ class MatchService {
   ];
 
   String _generateFirstMessage(NpcPersona npc) {
-    final messages =
-        _firstMessages[npc.archetype.id] ?? _defaultMessages;
+    final messages = _firstMessages[npc.archetype.id] ?? _defaultMessages;
 
     return messages[_random.nextInt(messages.length)];
   }
@@ -191,65 +195,62 @@ class MatchService {
     // Determine who starts the conversation.
     final npcStarts = _random.nextDouble() < npcFirstChance;
 
-    final firstMessage = npcStarts
-        ? _generateFirstMessage(npc)
-        : null;
+    final firstMessage = npcStarts ? _generateFirstMessage(npc) : null;
 
     // Prepare Firestore reference.
     final matchRef = _matches.doc(npc.id);
 
     // Save only if this match does not exist yet.
-    return FirebaseFirestore.instance.runTransaction<MatchOutcome>((transaction) async {
-        final existing = await transaction.get(matchRef);
+    return FirebaseFirestore.instance.runTransaction<MatchOutcome>((
+      transaction,
+    ) async {
+      final existing = await transaction.get(matchRef);
 
-        // Preserve an existing match and its career/intimacy.
-        if (existing.exists) {
-          final data = existing.data() ?? {};
-
-          return MatchOutcome(
-            isMatch: true,
-            npcStarts: data['npcStarts'] == true,
-            firstMessage: data['firstMessage'] as String?,
-          );
-        }
-
-        transaction.set(matchRef, {
-          // NPC identity
-          'npcId': npc.id,
-          'name': npc.name,
-          'age': npc.age,
-          'species': npc.species,
-          'avatarIndex': npc.avatarIndex,
-          'bio': npc.bio,
-
-          // Personality
-          'archetypeId': npc.archetype.id,
-          'archetype': npc.archetype.name,
-          'traits': npc.traits
-              .map((trait) => trait.label)
-              .toList(),
-
-          // Career
-          'career': npc.career,
-
-          // Chat state
-          'npcStarts': npcStarts,
-          'firstMessage': firstMessage,
-          'opened': false,
-          'matchedAt': FieldValue.serverTimestamp(),
-
-          // Relationship progression
-          'relationshipStatus': 'active',
-          'intimacy': _initialIntimacy(),
-        });
+      // Preserve an existing match and its career/intimacy.
+      if (existing.exists) {
+        final data = existing.data() ?? {};
 
         return MatchOutcome(
           isMatch: true,
-          npcStarts: npcStarts,
-          firstMessage: firstMessage,
+          npcStarts: data['npcStarts'] == true,
+          firstMessage: data['firstMessage'] as String?,
         );
-      },
-    );
+      }
+
+      transaction.set(matchRef, {
+        // NPC identity
+        'npcId': npc.id,
+        'name': npc.name,
+        'age': npc.age,
+        'species': npc.species,
+        'avatarIndex': npc.avatarIndex,
+        'bio': npc.bio,
+
+        // Personality
+        'archetypeId': npc.archetype.id,
+        'archetype': npc.archetype.name,
+        'traits': npc.traits.map((trait) => trait.label).toList(),
+
+        // Career
+        'career': npc.career,
+
+        // Chat state
+        'npcStarts': npcStarts,
+        'firstMessage': firstMessage,
+        'opened': false,
+        'matchedAt': FieldValue.serverTimestamp(),
+
+        // Relationship progression
+        'relationshipStatus': 'active',
+        'intimacy': _initialIntimacy(),
+      });
+
+      return MatchOutcome(
+        isMatch: true,
+        npcStarts: npcStarts,
+        firstMessage: firstMessage,
+      );
+    });
   }
 
   // ----------------------------------------------------------
@@ -260,10 +261,9 @@ class MatchService {
         .orderBy('matchedAt', descending: true)
         .snapshots()
         .map(
-          (snapshot) => snapshot.docs
-          .map(OrbitMatch.fromDoc)
-          .toList(growable: false),
-    );
+          (snapshot) =>
+              snapshot.docs.map(OrbitMatch.fromDoc).toList(growable: false),
+        );
   }
 
   // ----------------------------------------------------------
@@ -272,20 +272,16 @@ class MatchService {
   Future<void> markOpened(String npcId) async {
     final matchRef = _matches.doc(npcId);
 
-    await FirebaseFirestore.instance.runTransaction(
-          (transaction) async {
-        final snapshot = await transaction.get(matchRef);
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final snapshot = await transaction.get(matchRef);
 
-        // No document: nothing to update.
-        if (!snapshot.exists) return;
+      // No document: nothing to update.
+      if (!snapshot.exists) return;
 
-        // Already opened: skip the write.
-        if (snapshot.data()?['opened'] == true) return;
+      // Already opened: skip the write.
+      if (snapshot.data()?['opened'] == true) return;
 
-        transaction.update(matchRef, {
-          'opened': true,
-        });
-      },
-    );
+      transaction.update(matchRef, {'opened': true});
+    });
   }
 }

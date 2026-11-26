@@ -2,16 +2,21 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/constants/app_radius.dart';
+import '../../core/constants/app_spacing.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../core/widgets/app_avatar.dart';
+import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_chip.dart';
+import '../../core/widgets/app_icon_button.dart';
+import '../../core/widgets/app_section_title.dart';
 import '../auth/auth_gate.dart';
 import '../auth/player_auth_service.dart';
 import '../home_screen.dart';
 import 'orbit_profile.dart';
 import 'profile_setup_screen.dart';
 
-/// ORBIT • Lunar Lavender profile.
-/// UI-only redesign. The player document and saved preference field names
-/// remain unchanged: players/{uid}, aboutYou, typeOfMan.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key, this.showEnterButton = false});
 
@@ -23,16 +28,18 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   static const _months = <String>[
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-  ];
-
-  static const _typeOptions = <String>[
-    'Gentle', 'Funny', 'Loyal', 'Confident', 'Romantic',
-    'Caring', 'Intelligent', 'Goal-Oriented', 'Calm', 'Ambitious',
-    'Mature', 'Playful', 'Special', 'Adventurous', 'Mysterious',
-    'Communicative', 'Thoughtful',
-    'Smart', 'Protective', 'Good Listener', // Existing saved values.
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
 
   static const _defaultAbout =
@@ -45,18 +52,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
       FirebaseFirestore.instance.collection('players').doc(uid);
 
   String _birthday(OrbitProfile profile, Map<String, dynamic> data) {
-    final month = profile.birth_month;
+    final month = profile.birthMonth;
+
     if (month < 1 || month > 12) return 'Not set';
+
     final year = data['birth_year'];
-    final value = '${_months[month - 1]} ${profile.birth_day}';
+    final value = '${_months[month - 1]} ${profile.birthDay}';
+
     return year is int && year > 0 ? '$value, $year' : value;
   }
 
   String _about(Map<String, dynamic> data) {
     final value = data['aboutYou'];
     return value is String &&
-        value.trim().isNotEmpty &&
-        value.trim() != _oldDefaultAbout
+            value.trim().isNotEmpty &&
+            value.trim() != _oldDefaultAbout
         ? value.trim()
         : _defaultAbout;
   }
@@ -65,7 +75,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final raw = data['typeOfMan'];
     if (raw is! List) return const [];
     final set = raw.whereType<String>().toSet();
-    return _typeOptions.where(set.contains).toList(growable: false);
+    return OrbitPreferences.typeOptions
+        .where(set.contains)
+        .toList(growable: false);
   }
 
   Future<void> _saveFields(Map<String, dynamic> fields) async {
@@ -83,9 +95,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _showError(Object error) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$error')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('$error')));
   }
 
   Future<void> _openPersonaSetup() async {
@@ -111,16 +122,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           maxLines: 4,
           maxLength: 180,
           onChanged: (value) => draft = value,
-          style: const TextStyle(color: AppColors.textPrimary),
-          decoration: InputDecoration(
+          style: AppTextStyles.body,
+          decoration: const InputDecoration(
             hintText: 'Tell the universe about yourself...',
-            hintStyle: const TextStyle(color: AppColors.textSecondary),
-            filled: true,
-            fillColor: AppColors.elevatedSurface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
           ),
         ),
         actions: [
@@ -158,11 +162,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               maxHeight: MediaQuery.sizeOf(context).height * .82,
             ),
             padding: EdgeInsets.fromLTRB(
-              20, 14, 20, 16 + MediaQuery.viewInsetsOf(context).bottom,
+              20,
+              14,
+              20,
+              16 + MediaQuery.viewInsetsOf(context).bottom,
             ),
             decoration: const BoxDecoration(
               color: AppColors.surface,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(AppRadius.bottomSheet),
+              ),
             ),
             child: SingleChildScrollView(
               child: Column(
@@ -190,39 +199,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Choose up to 6 traits to guide your future matches.',
+                    'Choose up to ${OrbitPreferences.maxTraits} traits.',
                     style: TextStyle(color: AppColors.textSecondary),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    '${selected.length}/${OrbitPreferences.maxTraits} selected',
+                    style: AppTextStyles.caption,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
+                    spacing: AppSpacing.chipGap,
+                    runSpacing: AppSpacing.chipGap,
                     children: [
-                      for (final type in _typeOptions)
-                        FilterChip(
-                          label: Text(type),
+                      for (final type in OrbitPreferences.typeOptions)
+                        OrbitChip(
+                          label: type,
                           selected: selected.contains(type),
-                          showCheckmark: false,
-                          backgroundColor: AppColors.elevatedSurface,
-                          selectedColor: AppColors.primary,
-                          side: BorderSide(
-                            color: selected.contains(type)
-                                ? AppColors.primary
-                                : AppColors.border,
-                          ),
-                          labelStyle: TextStyle(
-                            color: selected.contains(type)
-                                ? AppColors.onPrimary
-                                : AppColors.textPrimary,
-                            fontWeight: selected.contains(type)
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                          ),
                           onSelected: (active) {
-                            if (active && selected.length >= 6) {
+                            if (active &&
+                                selected.length >= OrbitPreferences.maxTraits) {
                               ScaffoldMessenger.of(sheetContext).showSnackBar(
                                 const SnackBar(
-                                  content: Text('Choose up to 6 traits.'),
+                                  content: Text(
+                                    'Choose up to ${OrbitPreferences.maxTraits} traits.',
+                                  ),
                                 ),
                               );
                               return;
@@ -239,20 +240,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      onPressed: () => Navigator.pop(
-                        sheetContext,
-                        _typeOptions.where(selected.contains).toList(),
-                      ),
-                      child: const Text('Save preferences'),
-                    ),
+                  OrbitButton(
+                    label: 'Save preferences',
+                    fullWidth: true,
+                    onPressed: selected.length > OrbitPreferences.maxTraits
+                        ? null
+                        : () => Navigator.pop(
+                            sheetContext,
+                            OrbitPreferences.typeOptions
+                                .where(selected.contains)
+                                .toList(),
+                          ),
                   ),
                 ],
               ),
@@ -266,9 +264,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       await _saveFields({'typeOfMan': result});
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Preferences saved.')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Preferences saved.')));
       }
     } catch (error) {
       _showError('Could not save preferences: $error');
@@ -306,414 +303,194 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const AuthGate()),
-            (_) => false,
+        (_) => false,
       );
     } catch (error) {
       _showError('Logout failed: $error');
     }
   }
 
-  // ====================================================
-  // LUNAR LAVENDER — EDITORIAL PROFILE UI
-  // No local background. main.dart owns bg.jpg + dark overlay.
-  // ====================================================
-
-  static const Color _ink = AppColors.textPrimary;
-  static const Color _muted = AppColors.textSecondary;
-  static const Color _lilac = AppColors.primary;
-
-  static const Map<String, String> _zodiacSymbols = {
-    'Aries': '♈', 'Taurus': '♉', 'Gemini': '♊', 'Cancer': '♋',
-    'Leo': '♌', 'Virgo': '♍', 'Libra': '♎', 'Scorpio': '♏',
-    'Sagittarius': '♐', 'Capricorn': '♑', 'Aquarius': '♒',
-    'Pisces': '♓',
-  };
-
-  TextStyle _serif(double fontSize, {bool italic = true}) {
-    return TextStyle(
-      fontFamily: 'serif',
-      fontStyle: italic ? FontStyle.italic : FontStyle.normal,
-      fontSize: fontSize,
-      fontWeight: FontWeight.w400,
-      color: _ink,
-      height: 1.12,
-    );
-  }
-
-  Widget _hairline() => Container(
-    height: 1,
-    color: AppColors.border.withValues(alpha: .72),
-  );
-
-  Widget _ornamentDivider() => Row(
-    children: [
-      Expanded(child: _hairline()),
-      const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 13),
-        child: Text(
-          '✧',
-          style: TextStyle(color: _lilac, fontSize: 25, height: 1),
+  // Shared design system — global background is supplied by main.dart.
+  Widget _sectionDivider() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+    child: Row(
+      children: [
+        Expanded(
+          child: Divider(
+            height: 1,
+            color: AppColors.border.withValues(alpha: 0.7),
+          ),
         ),
-      ),
-      Expanded(child: _hairline()),
-    ],
-  );
-
-  // Shared non-interactive, centered section title.
-  // Editing is controlled through explicit buttons below the content.
-  Widget _centeredSectionTitle(String title) => SizedBox(
-    width: double.infinity,
-    child: Text(
-      title,
-      textAlign: TextAlign.center,
-      style: _serif(26),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          child: Text(
+            '✧',
+            style: TextStyle(color: AppColors.primary, fontSize: 15, height: 1),
+          ),
+        ),
+        Expanded(
+          child: Divider(
+            height: 1,
+            color: AppColors.border.withValues(alpha: 0.7),
+          ),
+        ),
+      ],
     ),
   );
 
   Widget _profilePicture(OrbitProfile profile, Map<String, dynamic> data) {
     final raw = data['photoUrl'];
-    final photoUrl = raw is String && raw.trim().isNotEmpty ? raw.trim() : null;
+    final url = raw is String && raw.trim().isNotEmpty ? raw.trim() : null;
 
-    final fallback = Image.asset(
-      'lib/core/assets/player_avatar.png',
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Image.asset(
-        'lib/core/assets/bg4.png',
-        fit: BoxFit.cover,
-        alignment: const Alignment(-.32, -.72),
-        errorBuilder: (_, __, ___) => ColoredBox(
-          color: AppColors.elevatedSurface,
-          child: Center(
-            child: Text(
-              profile.username.isEmpty
-                  ? '?'
-                  : profile.username.substring(0, 1).toUpperCase(),
-              style: const TextStyle(
-                color: AppColors.primary,
-                fontSize: 38,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    return Container(
-      width: 106,
-      height: 106,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: _lilac.withValues(alpha: .82),
-          width: 1.3,
-        ),
-      ),
-      child: ClipOval(
-        child: photoUrl == null
-            ? fallback
-            : Image.network(
-          photoUrl,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => fallback,
-        ),
-      ),
+    return OrbitAvatar(
+      name: profile.username,
+      size: 112,
+      imageUrl: url,
+      fallbackAsset: 'lib/core/assets/bg4.png',
+      fallbackAlignment: const Alignment(-.32, -.72),
     );
   }
 
-  Widget _identity(OrbitProfile profile, Map<String, dynamic> data) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        _profilePicture(profile, data),
-        const SizedBox(width: 15),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                profile.username,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: _serif(30),
-              ),
-              const SizedBox(height: 9),
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 9,
-                runSpacing: 5,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _zodiacSymbols[profile.zodiac] ?? '✧',
-                        style: const TextStyle(
-                          color: _lilac,
-                          fontSize: 21,
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        profile.zodiac,
-                        style: const TextStyle(
-                          color: _muted,
-                          fontSize: 13.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Text(
-                    '│',
-                    style: TextStyle(color: _muted, fontSize: 13),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.satellite_alt_outlined,
-                        size: 19,
-                        color: _lilac,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        profile.origin_sector,
-                        style: const TextStyle(
-                          color: _muted,
-                          fontSize: 13.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 15),
-              FilledButton.icon(
-                onPressed: _openPersonaSetup,
-                icon: const Icon(Icons.edit_outlined, size: 17),
-                label: const Text('Edit persona'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFE2D0F1),
-                  foregroundColor: AppColors.onPrimary,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 11,
-                  ),
-                  minimumSize: const Size(0, 42),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  elevation: 0,
-                  shape: const StadiumBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
+  Widget _identity(OrbitProfile profile, Map<String, dynamic> data) => Column(
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
+      _profilePicture(profile, data),
 
-  // Cosmic details are READ-ONLY. Labels stay left, values stay right.
+      const SizedBox(height: AppSpacing.md),
+
+      Text(
+        profile.username,
+        style: AppTextStyles.heading1,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+    ],
+  );
+
   Widget _detailRow({
     required Widget icon,
     required String label,
     required String value,
-    bool showDivider = true,
-  }) {
-    return Column(
+  }) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: Center(child: icon),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  value,
-                  textAlign: TextAlign.right,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (showDivider) _hairline(),
-      ],
-    );
-  }
-
-  Widget _cosmicDetails(OrbitProfile profile, Map<String, dynamic> data) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _centeredSectionTitle('Cosmic details'),
-        const SizedBox(height: 14),
-        _detailRow(
-          icon: const Icon(
-            Icons.calendar_today_outlined,
-            color: _lilac,
-            size: 22,
-          ),
-          label: 'Fictional birthday',
-          value: _birthday(profile, data),
-        ),
-        _detailRow(
-          icon: Text(
-            _zodiacSymbols[profile.zodiac] ?? '✧',
-            style: const TextStyle(color: _lilac, fontSize: 24),
-          ),
-          label: 'Zodiac',
-          value: profile.zodiac,
-        ),
-        _detailRow(
-          icon: const Icon(
-            Icons.satellite_alt_outlined,
-            color: _lilac,
-            size: 25,
-          ),
-          label: 'Origin sector',
-          value: profile.origin_sector,
-        ),
-      ],
-    );
-  }
-
-  Widget _aboutSection(String about) {
-    final isPlaceholder = about == _defaultAbout;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _centeredSectionTitle('About you'),
-        const SizedBox(height: 15),
-        Text(
-          about,
-          style: const TextStyle(
-            color: _muted,
-            fontSize: 14.5,
-            height: 1.5,
-          ),
-        ),
-        const SizedBox(height: 14),
-        OutlinedButton.icon(
-          onPressed: () => _editAbout(about),
-          icon: Icon(
-            isPlaceholder ? Icons.add_rounded : Icons.edit_outlined,
-            size: 18,
-          ),
-          label: Text(isPlaceholder ? 'Add about you' : 'Edit about you'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _lilac,
-            side: const BorderSide(color: AppColors.border),
-            minimumSize: const Size(0, 40),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            shape: const StadiumBorder(),
-            visualDensity: VisualDensity.compact,
+        SizedBox(width: 24, height: 24, child: Center(child: icon)),
+        const SizedBox(width: AppSpacing.iconGap),
+        Expanded(child: Text(label, style: AppTextStyles.bodyMuted)),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            value,
+            style: AppTextStyles.body,
+            textAlign: TextAlign.end,
           ),
         ),
       ],
-    );
-  }
+    ),
+  );
 
-  Future<void> _removeTrait(String trait, List<String> selected) async {
+  Widget _cosmicDetails(OrbitProfile profile, Map<String, dynamic> data) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const OrbitSectionTitle(title: 'Cosmic details'),
+          const SizedBox(height: AppSpacing.xs),
+          _detailRow(
+            icon: const Icon(
+              Icons.calendar_today_outlined,
+              color: AppColors.primary,
+              size: 20,
+            ),
+            label: 'Fictional birthday',
+            value: _birthday(profile, data),
+          ),
+          _detailRow(
+            icon: const Icon(
+              Icons.auto_awesome_outlined,
+              color: AppColors.primary,
+              size: 20,
+            ),
+            label: 'Zodiac',
+            value: profile.zodiac,
+          ),
+          _detailRow(
+            icon: const Icon(
+              Icons.public_outlined,
+              color: AppColors.primary,
+              size: 20,
+            ),
+            label: 'Origin sector',
+            value: profile.originSector,
+          ),
+        ],
+      );
+
+  Widget _aboutSection(String about) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      OrbitSectionTitle(
+        title: 'About you',
+        actionText: about == _defaultAbout ? 'Add' : 'Edit',
+        onTapAction: () => _editAbout(about),
+      ),
+      const SizedBox(height: AppSpacing.xs),
+      Text(about, style: AppTextStyles.bodyMuted),
+    ],
+  );
+
+  Future<void> _removeTrait(String trait) async {
     try {
+      // Remove just this trait, without overwriting other saved selections.
       await _saveFields({
-        'typeOfMan': selected.where((type) => type != trait).toList(),
+        'typeOfMan': FieldValue.arrayRemove([trait]),
       });
     } catch (error) {
       _showError('Could not remove $trait: $error');
     }
   }
 
-  Widget _traitChip(String trait, List<String> selected) {
-    return Material(
-      color: AppColors.elevatedSurface.withValues(alpha: .9),
-      borderRadius: BorderRadius.circular(99),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(99),
-        onTap: () => _removeTrait(trait, selected),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                trait,
-                style: const TextStyle(color: _ink, fontSize: 13.5),
-              ),
-              const SizedBox(width: 8),
-              const Icon(Icons.close_rounded, size: 15, color: _muted),
-            ],
-          ),
-        ),
+  Widget _typeSection(List<String> selected) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      OrbitSectionTitle(
+        title: 'Your type of man',
+        actionText: selected.isEmpty ? 'Add' : 'Edit',
+        onTapAction: () => _editTypes(selected),
       ),
-    );
-  }
-
-  Widget _typeSection(List<String> selected) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _centeredSectionTitle('Your type of man'),
-        const SizedBox(height: 15),
+      const SizedBox(height: AppSpacing.xs),
+      Text(
+        '${selected.length}/${OrbitPreferences.maxTraits} traits selected',
+        style: AppTextStyles.caption,
+      ),
+      const SizedBox(height: AppSpacing.xs),
+      if (selected.isEmpty)
         const Text(
-          'Your preferences help personalize your matches.',
-          style: TextStyle(color: _muted, fontSize: 14.5, height: 1.5),
-        ),
-        const SizedBox(height: 16),
+          'Choose the personality traits you value most.',
+          style: AppTextStyles.bodyMuted,
+        )
+      else
         Wrap(
-          spacing: 9,
-          runSpacing: 10,
+          spacing: AppSpacing.chipGap,
+          runSpacing: 0,
           children: [
-            for (final trait in selected) _traitChip(trait, selected),
-            OutlinedButton.icon(
-              onPressed: () => _editTypes(selected),
-              icon: const Icon(Icons.add_rounded, size: 19),
-              label: const Text('Add'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _lilac,
-                side: const BorderSide(color: _lilac, width: 1),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                visualDensity: VisualDensity.compact,
-                minimumSize: const Size(0, 40),
-                shape: const StadiumBorder(),
-              ),
-            ),
+            for (final trait in selected)
+              OrbitChip(label: trait, onDeleted: () => _removeTrait(trait)),
           ],
         ),
-      ],
-    );
-  }
+    ],
+  );
 
   Future<void> _openSettings() async {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppRadius.bottomSheet),
+        ),
       ),
       builder: (sheetContext) => SafeArea(
         top: false,
@@ -733,18 +510,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               ListTile(
-                leading: const Icon(Icons.edit_outlined, color: _lilac),
-                title: const Text('Edit persona',
-                    style: TextStyle(color: _ink)),
+                leading: const Icon(
+                  Icons.edit_outlined,
+                  color: AppColors.primary,
+                ),
+                title: const Text(
+                  'Edit persona',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   _openPersonaSetup();
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.logout_rounded, color: _muted),
-                title: const Text('Log out',
-                    style: TextStyle(color: _ink)),
+                leading: const Icon(
+                  Icons.logout_rounded,
+                  color: AppColors.textSecondary,
+                ),
+                title: const Text(
+                  'Log out',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   _logout();
@@ -762,7 +549,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final selected = _selectedTypes(data);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 18, 24, 36),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.pageHorizontal,
+        AppSpacing.sm,
+        AppSpacing.pageHorizontal,
+        AppSpacing.xl,
+      ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 580),
@@ -771,62 +563,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Row(
                 children: [
-                  Expanded(child: Text('Profile', style: _serif(40, italic: false))),
-                  IconButton(
-                    onPressed: _openSettings,
+                  const Expanded(
+                    child: Text('Profile', style: AppTextStyles.heading1),
+                  ),
+                  OrbitIconButton(
+                    icon: Icons.settings_outlined,
+                    variant: OrbitIconButtonVariant.ghost,
+                    size: 48,
                     tooltip: 'Profile settings',
-                    icon: const Icon(
-                      Icons.settings_outlined,
-                      color: _lilac,
-                      size: 28,
-                    ),
+                    onTap: _openSettings,
                   ),
                 ],
               ),
-              const SizedBox(height: 25),
+              const SizedBox(height: AppSpacing.md),
               _identity(profile, data),
-              const SizedBox(height: 29),
-              _ornamentDivider(),
-              const SizedBox(height: 24),
+              _sectionDivider(),
               _cosmicDetails(profile, data),
-              const SizedBox(height: 26),
-              _ornamentDivider(),
-              const SizedBox(height: 24),
+              _sectionDivider(),
               _aboutSection(about),
-              const SizedBox(height: 26),
-              _ornamentDivider(),
-              const SizedBox(height: 24),
+              _sectionDivider(),
               _typeSection(selected),
-              const SizedBox(height: 28),
-              _ornamentDivider(),
-              const SizedBox(height: 16),
-              if (widget.showEnterButton)
-                FilledButton.icon(
+              if (widget.showEnterButton) ...[
+                const SizedBox(height: AppSpacing.lg),
+                OrbitButton(
+                  label: 'Enter ORBIT Universe',
+                  icon: Icons.arrow_forward_rounded,
+                  fullWidth: true,
                   onPressed: () => Navigator.of(context).pushAndRemoveUntil(
                     MaterialPageRoute(builder: (_) => const HomeScreen()),
-                        (_) => false,
-                  ),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _lilac,
-                    foregroundColor: AppColors.onPrimary,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                  ),
-                  icon: const Icon(Icons.arrow_forward_rounded),
-                  label: const Text('Enter ORBIT Universe'),
-                )
-              else
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: _logout,
-                    style: TextButton.styleFrom(
-                      foregroundColor: _muted,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    icon: const Icon(Icons.logout_rounded, size: 21),
-                    label: const Text('Log out'),
+                    (_) => false,
                   ),
                 ),
+              ],
             ],
           ),
         ),
@@ -850,7 +618,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
-    // No local image, gradient, or dim layer: use main.dart's global bg.jpg.
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(

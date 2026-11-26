@@ -6,7 +6,7 @@ import '../../features/npc/npc_avatar_widget.dart';
 /// Shared circular avatar for ORBIT.
 ///
 /// [portraitScale] controls how zoomed-in the whole NPC portrait appears.
-/// Use a lower value in the Inbox; the Chat Room keeps the default crop.
+/// All circular avatars use the same default crop.
 class OrbitAvatar extends StatelessWidget {
   const OrbitAvatar({
     super.key,
@@ -17,7 +17,9 @@ class OrbitAvatar extends StatelessWidget {
     this.avatarIndex,
     this.isOnline = false,
     this.highlighted = false,
-    this.portraitScale = 1.9,
+    this.portraitScale = 1.38,
+    this.fallbackAsset,
+    this.fallbackAlignment = Alignment.center,
   });
 
   final double size;
@@ -28,6 +30,8 @@ class OrbitAvatar extends StatelessWidget {
   final bool isOnline;
   final bool highlighted;
   final double portraitScale;
+  final String? fallbackAsset;
+  final Alignment fallbackAlignment;
 
   /// Reads a previously saved portrait index; never randomizes a match's face.
   static int? indexFromMatchData(Map<String, dynamic>? data) {
@@ -39,7 +43,9 @@ class OrbitAvatar extends StatelessWidget {
     }
 
     if (value is int) return value >= 0 ? value : null;
-    if (value is num) return value >= 0 ? value.toInt() : null;
+    if (value is num) {
+      return value.isFinite && value >= 0 ? value.toInt() : null;
+    }
     if (value is String) {
       final parsed = int.tryParse(value);
       return parsed != null && parsed >= 0 ? parsed : null;
@@ -57,19 +63,30 @@ class OrbitAvatar extends StatelessWidget {
       child: Center(
         child: initial != null
             ? Text(
-          initial,
-          style: TextStyle(
-            color: AppColors.primary,
-            fontWeight: FontWeight.bold,
-            fontSize: diameter * 0.38,
-          ),
-        )
+                initial,
+                style: TextStyle(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: diameter * 0.38,
+                ),
+              )
             : Icon(
-          Icons.person_rounded,
-          color: AppColors.primary,
-          size: diameter * 0.5,
-        ),
+                Icons.person_rounded,
+                color: AppColors.primary,
+                size: diameter * 0.5,
+              ),
       ),
+    );
+  }
+
+  Widget _fallbackImage(double diameter) {
+    final asset = fallbackAsset;
+    if (asset == null) return _fallback(diameter);
+    return Image.asset(
+      asset,
+      fit: BoxFit.cover,
+      alignment: fallbackAlignment,
+      errorBuilder: (_, _, _) => _fallback(diameter),
     );
   }
 
@@ -86,10 +103,7 @@ class OrbitAvatar extends StatelessWidget {
           top: innerDiameter / 2 - imageHeight * 0.38,
           width: imageWidth,
           height: imageHeight,
-          child: NpcAvatarWidget(
-            avatarIndex: avatarIndex!,
-            width: imageWidth,
-          ),
+          child: NpcAvatarWidget(avatarIndex: avatarIndex!, width: imageWidth),
         ),
       ],
     );
@@ -122,13 +136,13 @@ class OrbitAvatar extends StatelessWidget {
                   ? _npcPortrait(innerSize)
                   : imageUrl != null
                   ? Image.network(
-                imageUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return _fallback(innerSize);
-                },
-              )
-                  : _fallback(innerSize),
+                      imageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return _fallbackImage(innerSize);
+                      },
+                    )
+                  : _fallbackImage(innerSize),
             ),
           ),
           if (isOnline)
@@ -141,10 +155,7 @@ class OrbitAvatar extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.success,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.background,
-                    width: 2,
-                  ),
+                  border: Border.all(color: AppColors.background, width: 2),
                 ),
               ),
             ),

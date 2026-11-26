@@ -1,13 +1,16 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/constants/app_radius.dart';
+import '../../core/constants/app_spacing.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_chip.dart';
+import '../../core/widgets/orbit_logo.dart';
 import 'orbit_profile.dart';
 import 'profile_screen.dart';
 
-/// ORBIT • Lunar Lavender persona setup.
-/// editMode = false: first-time onboarding.
-/// editMode = true: prefill existing profile, save and return to Profile.
 class ProfileSetupScreen extends StatefulWidget {
   const ProfileSetupScreen({super.key, this.editMode = false});
 
@@ -18,10 +21,12 @@ class ProfileSetupScreen extends StatefulWidget {
 }
 
 class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
+  int _step = 0;
   String? _gender;
   String _originSector = 'Velara Expanse';
   int _month = 7;
   int _day = 16;
+  final Set<String> _selectedTypes = {};
   bool _privacyAccepted = false;
   bool _saving = false;
   bool _loading = false;
@@ -29,8 +34,18 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   String? _savedUsername;
 
   static const _months = <String>[
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
 
   static const _sectors = <String>[
@@ -58,25 +73,36 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     'Pisces': 'Dreamy · Empathetic · Imaginative',
   };
 
+  // Text presentation selector avoids colorful emoji where supported.
+  static const _zodiacSymbols = <String, String>{
+    'Aries': '\u2648\uFE0E',
+    'Taurus': '\u2649\uFE0E',
+    'Gemini': '\u264A\uFE0E',
+    'Cancer': '\u264B\uFE0E',
+    'Leo': '\u264C\uFE0E',
+    'Virgo': '\u264D\uFE0E',
+    'Libra': '\u264E\uFE0E',
+    'Scorpio': '\u264F\uFE0E',
+    'Sagittarius': '\u2650\uFE0E',
+    'Capricorn': '\u2651\uFE0E',
+    'Aquarius': '\u2652\uFE0E',
+    'Pisces': '\u2653\uFE0E',
+  };
+
   String get _registeredUsername {
-    if (_savedUsername != null && _savedUsername!.trim().isNotEmpty) {
-      return _savedUsername!.trim();
-    }
+    final saved = _savedUsername?.trim();
+    if (saved != null && saved.isNotEmpty) return saved;
     final user = FirebaseAuth.instance.currentUser;
     final displayName = user?.displayName?.trim();
-    if (displayName != null && displayName.isNotEmpty) {
-      return displayName;
-    }
+    if (displayName != null && displayName.isNotEmpty) return displayName;
     final email = user?.email;
-    if (email != null && email.contains('@')) {
-      return email.split('@').first;
-    }
+    if (email != null && email.contains('@')) return email.split('@').first;
     return '';
   }
 
   String get _zodiac => ZodiacService.fromBirthday(_month, _day);
-
   int get _maxDay => DateTime(2000, _month + 1, 0).day;
+  bool get _lastStep => _step == 2;
 
   @override
   void initState() {
@@ -101,9 +127,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       setState(() {
         _savedUsername = profile.username;
         _gender = profile.gender;
-        _originSector = profile.origin_sector;
-        _month = profile.birth_month;
-        _day = profile.birth_day;
+        _originSector = profile.originSector;
+        _month = profile.birthMonth;
+        _day = profile.birthDay;
         _privacyAccepted = true;
       });
     } catch (error) {
@@ -117,26 +143,38 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _continue() async {
-    if (_saving || _loading) return;
-    if (_loadingError != null) {
-      _showError('Load your saved persona before editing.');
-      return;
-    }
-    final username = _registeredUsername;
-    if (username.length < 3) {
+  bool _validateIdentity() {
+    if (_registeredUsername.length < 3) {
       _showError('Please sign in with a username of at least 3 characters.');
-      return;
+      return false;
     }
     if (_gender == null) {
       _showError('Please select your gender.');
+      return false;
+    }
+    return true;
+  }
+
+  void _goBack() {
+    if (_saving || _step == 0) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _step--);
+  }
+
+  Future<void> _continue() async {
+    if (_saving || _loading || _loadingError != null) return;
+    if (!_validateIdentity()) return;
+
+    if (!widget.editMode && !_lastStep) {
+      FocusScope.of(context).unfocus();
+      setState(() => _step++);
       return;
     }
+
     if (!widget.editMode && !_privacyAccepted) {
       _showError('Please acknowledge the privacy notice.');
       return;
@@ -144,19 +182,22 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
     FocusScope.of(context).unfocus();
     setState(() => _saving = true);
-
     try {
       await OrbitProfileStore.save(
         OrbitProfile(
-          username: username,
+          username: _registeredUsername,
           gender: _gender!,
-          origin_sector: _originSector,
-          birth_month: _month,
-          birth_day: _day,
+          originSector: _originSector,
+          birthMonth: _month,
+          birthDay: _day,
         ),
+        typeOfMan: widget.editMode
+            ? null
+            : OrbitPreferences.typeOptions
+                  .where(_selectedTypes.contains)
+                  .toList(),
       );
       if (!mounted) return;
-
       if (widget.editMode) {
         Navigator.of(context).pop(true);
       } else {
@@ -164,7 +205,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
           MaterialPageRoute(
             builder: (_) => const ProfileScreen(showEnterButton: true),
           ),
-              (_) => false,
+          (_) => false,
         );
       }
     } catch (error) {
@@ -174,89 +215,44 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     }
   }
 
-  // --- LUNAR LAVENDER COMPONENTS ---
+  void _selectType(String type, bool selected) {
+    if (_saving) return;
+    if (selected &&
+        !_selectedTypes.contains(type) &&
+        _selectedTypes.length >= OrbitPreferences.maxTraits) {
+      _showError('Choose up to ${OrbitPreferences.maxTraits} traits.');
+      return;
+    }
+    setState(() {
+      if (selected) {
+        _selectedTypes.add(type);
+      } else {
+        _selectedTypes.remove(type);
+      }
+    });
+  }
 
-  Widget _panel({required Widget child}) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(18),
-    decoration: BoxDecoration(
-      color: AppColors.surface.withValues(alpha: .94),
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(
-        color: AppColors.border.withValues(alpha: .6),
-        width: .8,
-      ),
-    ),
-    child: child,
-  );
-
-  Widget _label(String title, IconData icon) => Row(
-    children: [
-      Icon(icon, color: AppColors.primary, size: 19),
-      const SizedBox(width: 9),
-      Expanded(
-        child: Text(
-          title,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    ],
-  );
-
-  Widget _optionChip({
-    required String text,
-    required bool selected,
-    required VoidCallback onTap,
-  }) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(22),
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 170),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: selected ? AppColors.primary : AppColors.elevatedSurface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: selected ? AppColors.primary : AppColors.border,
-        ),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 12.5,
-          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-          color: selected ? AppColors.onPrimary : AppColors.textPrimary,
-        ),
-      ),
-    ),
-  );
-
-  Widget _dateDropdown({
-    required int value,
-    required List<DropdownMenuItem<int>> items,
-    required ValueChanged<int?> onChanged,
+  Widget _dropdown<T>({
+    required T value,
+    required List<DropdownMenuItem<T>> items,
+    required ValueChanged<T?> onChanged,
   }) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12),
+    constraints: const BoxConstraints(minHeight: 48),
+    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.inputHorizontal),
     decoration: BoxDecoration(
-      color: AppColors.elevatedSurface,
-      borderRadius: BorderRadius.circular(13),
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(AppRadius.input),
       border: Border.all(color: AppColors.border),
     ),
     child: DropdownButtonHideUnderline(
-      child: DropdownButton<int>(
+      child: DropdownButton<T>(
         value: value,
         items: items,
-        onChanged: onChanged,
+        onChanged: _saving ? null : onChanged,
         isExpanded: true,
-        dropdownColor: AppColors.surface,
-        style: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 13,
-        ),
+        dropdownColor: AppColors.elevatedSurface,
+        borderRadius: BorderRadius.circular(AppRadius.input),
+        style: AppTextStyles.input,
         icon: const Icon(
           Icons.keyboard_arrow_down_rounded,
           color: AppColors.textSecondary,
@@ -265,368 +261,424 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     ),
   );
 
-  Widget _buildIdentity() => _panel(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label('Your cosmic identity', Icons.person_outline_rounded),
-        const SizedBox(height: 12),
-        Text(
-          _registeredUsername.isEmpty ? 'Traveler' : _registeredUsername,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 5),
-        const Text(
-          'Your username is linked to your account.',
-          style: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 12.5,
-          ),
-        ),
+  Widget _intro(String title, String subtitle, {String? chapter}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (chapter != null) ...[
+        Text(chapter, style: AppTextStyles.overline),
+        const SizedBox(height: AppSpacing.md),
       ],
-    ),
+      Text(title, style: AppTextStyles.display),
+      const SizedBox(height: AppSpacing.sm),
+      Text(subtitle, style: AppTextStyles.bodyMuted),
+    ],
   );
 
-  Widget _buildGender() => _panel(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label('Gender', Icons.people_outline_rounded),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 9,
-          runSpacing: 9,
+  Widget _identity() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const Text('Your cosmic username', style: AppTextStyles.title),
+      const SizedBox(height: AppSpacing.sm),
+      Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.input),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
           children: [
-            for (final gender in _genders)
-              _optionChip(
-                text: gender,
-                selected: _gender == gender,
-                onTap: () => setState(() => _gender = gender),
+            const Icon(
+              Icons.alternate_email_rounded,
+              size: 20,
+              color: AppColors.primary,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Text(
+                _registeredUsername.isEmpty ? 'Traveler' : _registeredUsername,
+                style: AppTextStyles.body,
               ),
+            ),
+            const Icon(
+              Icons.lock_outline_rounded,
+              size: 18,
+              color: AppColors.textSecondary,
+            ),
           ],
         ),
-      ],
-    ),
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      const Text(
+        'Your username is linked to your account.',
+        style: AppTextStyles.caption,
+      ),
+      const SizedBox(height: AppSpacing.sectionGap),
+      const Text('Gender', style: AppTextStyles.title),
+      const SizedBox(height: AppSpacing.sm),
+      Wrap(
+        spacing: AppSpacing.chipGap,
+        children: [
+          for (final gender in _genders)
+            OrbitChip(
+              label: gender,
+              selected: _gender == gender,
+              onSelected: (_) {
+                if (!_saving) setState(() => _gender = gender);
+              },
+            ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.sectionGap),
+      const Text('Origin sector', style: AppTextStyles.title),
+      const SizedBox(height: AppSpacing.xs),
+      const Text(
+        'Where does your fictional story begin?',
+        style: AppTextStyles.caption,
+      ),
+      const SizedBox(height: AppSpacing.md),
+      _dropdown<String>(
+        value: _originSector,
+        items: [
+          for (final sector in {..._sectors, _originSector})
+            DropdownMenuItem(value: sector, child: Text(sector)),
+        ],
+        onChanged: (value) {
+          if (value != null) setState(() => _originSector = value);
+        },
+      ),
+    ],
   );
 
-  Widget _buildOrigin() => _panel(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label('Origin sector', Icons.public_outlined),
-        const SizedBox(height: 6),
-        const Text(
-          'Where does your fictional story begin?',
-          style: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 12,
-          ),
-        ),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final sector in _sectors)
-              _optionChip(
-                text: sector,
-                selected: _originSector == sector,
-                onTap: () => setState(() => _originSector = sector),
+  Widget _birthday() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const Text('Fictional birthday', style: AppTextStyles.title),
+      const SizedBox(height: AppSpacing.md),
+      Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: _dropdown<int>(
+              value: _month,
+              items: List.generate(
+                12,
+                (index) => DropdownMenuItem<int>(
+                  value: index + 1,
+                  child: Text(_months[index]),
+                ),
               ),
-          ],
-        ),
-      ],
-    ),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _month = value;
+                  if (_day > _maxDay) _day = _maxDay;
+                });
+              },
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: _dropdown<int>(
+              value: _day,
+              items: List.generate(
+                _maxDay,
+                (index) => DropdownMenuItem<int>(
+                  value: index + 1,
+                  child: Text('${index + 1}'),
+                ),
+              ),
+              onChanged: (value) {
+                if (value != null) setState(() => _day = value);
+              },
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.md),
+      const Text(
+        'A made-up date is enough. Your real birthday is not needed.',
+        style: AppTextStyles.caption,
+      ),
+      const SizedBox(height: AppSpacing.xxxl),
+      _zodiacPreview(),
+    ],
   );
 
-  Widget _buildBirthday() => _panel(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label('Fictional birthday', Icons.calendar_today_outlined),
-        const SizedBox(height: 14),
+  Widget _zodiacPreview() => Column(
+    children: [
+      Text(
+        _zodiacSymbols[_zodiac] ?? '✧',
+        style: const TextStyle(
+          fontSize: 72,
+          height: 1.2,
+          color: AppColors.primary,
+        ),
+      ),
+      const SizedBox(height: AppSpacing.md),
+      Text(_zodiac, style: AppTextStyles.editorial.copyWith(fontSize: 32)),
+      const SizedBox(height: AppSpacing.sm),
+      Text(
+        _zodiacTraits[_zodiac] ?? '',
+        textAlign: TextAlign.center,
+        style: AppTextStyles.body.copyWith(color: AppColors.primary),
+      ),
+      const SizedBox(height: AppSpacing.md),
+      const Text(
+        'A little cosmic inspiration for your fictional persona.',
+        style: AppTextStyles.caption,
+        textAlign: TextAlign.center,
+      ),
+    ],
+  );
+
+  Widget _preferences() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          const Expanded(
+            child: Text('Your ideal type of man', style: AppTextStyles.title),
+          ),
+          Text(
+            '${_selectedTypes.length}/${OrbitPreferences.maxTraits}',
+            style: AppTextStyles.caption.copyWith(color: AppColors.primary),
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      const Text(
+        'Choose the traits you appreciate most. This step is optional.',
+        style: AppTextStyles.caption,
+      ),
+      const SizedBox(height: AppSpacing.md),
+      Wrap(
+        spacing: AppSpacing.chipGap,
+        children: [
+          for (final type in OrbitPreferences.typeOptions)
+            OrbitChip(
+              label: type,
+              selected: _selectedTypes.contains(type),
+              onSelected: (selected) => _selectType(type, selected),
+            ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      const Text(
+        'You can change your preferences later in your profile.',
+        style: AppTextStyles.caption,
+      ),
+      const SizedBox(height: AppSpacing.sectionGap),
+      const Divider(),
+      CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        controlAffinity: ListTileControlAffinity.leading,
+        activeColor: AppColors.primary,
+        checkColor: AppColors.onPrimary,
+        value: _privacyAccepted,
+        onChanged: _saving
+            ? null
+            : (value) => setState(() => _privacyAccepted = value ?? false),
+        title: const Text('Your privacy matters', style: AppTextStyles.title),
+        subtitle: const Text(
+          'I understand that ORBIT is fictional. I should not use my real name or actual date of birth.',
+          style: AppTextStyles.caption,
+        ),
+      ),
+    ],
+  );
+
+  Widget _header() => Column(
+    children: [
+      Row(
+        children: [
+          if (widget.editMode) ...[
+            IconButton(
+              onPressed: _saving ? null : () => Navigator.maybePop(context),
+              icon: const Icon(Icons.arrow_back_rounded),
+              tooltip: 'Back',
+            ),
+            const SizedBox(width: AppSpacing.xs),
+          ],
+          const OrbitLogo(
+            wordmark: true,
+            size: 110,
+            height: 44,
+            alignment: Alignment.centerLeft,
+          ),
+          const Spacer(),
+          if (!widget.editMode)
+            Text('0${_step + 1} / 03', style: AppTextStyles.caption),
+        ],
+      ),
+      if (!widget.editMode) ...[
+        const SizedBox(height: AppSpacing.md),
         Row(
           children: [
-            Expanded(
-              flex: 2,
-              child: _dateDropdown(
-                value: _month,
-                items: List.generate(
-                  12,
-                      (index) => DropdownMenuItem<int>(
-                    value: index + 1,
-                    child: Text(_months[index]),
+            for (var i = 0; i < 3; i++) ...[
+              if (i > 0) const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: i <= _step
+                        ? AppColors.primary
+                        : AppColors.elevatedSurface,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
                 ),
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() {
-                    _month = value;
-                    if (_day > _maxDay) _day = _maxDay;
-                  });
-                },
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _dateDropdown(
-                value: _day,
-                items: List.generate(
-                  _maxDay,
-                      (index) => DropdownMenuItem<int>(
-                    value: index + 1,
-                    child: Text('${index + 1}'),
-                  ),
-                ),
-                onChanged: (value) {
-                  if (value != null) setState(() => _day = value);
-                },
-              ),
-            ),
+            ],
           ],
         ),
-        const SizedBox(height: 10),
-        const Text(
-          'A made-up date is enough. Your real birthday is not needed.',
-          style: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 12,
-          ),
-        ),
       ],
-    ),
+    ],
   );
 
-  Widget _buildZodiacPreview() => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(17),
-    decoration: BoxDecoration(
-      color: AppColors.elevatedSurface.withValues(alpha: .94),
-      borderRadius: BorderRadius.circular(18),
-    ),
-    child: Row(
-      children: [
-        const Icon(
-          Icons.nightlight_round,
-          color: AppColors.primary,
-          size: 29,
-        ),
-        const SizedBox(width: 13),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _zodiac,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _zodiacTraits[_zodiac] ?? '',
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 12,
-                ),
-              ),
-            ],
+  Widget _stepContent() {
+    if (widget.editMode) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _intro(
+            'Edit your persona',
+            'Make changes to your fictional identity.',
           ),
-        ),
+          const SizedBox(height: AppSpacing.xxxl),
+          _identity(),
+          const SizedBox(height: AppSpacing.xxxl),
+          _birthday(),
+        ],
+      );
+    }
+
+    final (chapter, title, subtitle, content) = switch (_step) {
+      0 => (
+        'CHAPTER 01 — IDENTITY',
+        'Who are you?',
+        "Every universe begins with a story. Let's start with yours.",
+        _identity(),
+      ),
+      1 => (
+        'CHAPTER 02 — ZODIAC',
+        'Written in the stars.',
+        'Discover the cosmic identity of your fictional persona.',
+        _birthday(),
+      ),
+      _ => (
+        'CHAPTER 03 — CONNECTION',
+        "What's your type?",
+        'Tell us what makes someone special to you.',
+        _preferences(),
+      ),
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _intro(title, subtitle, chapter: chapter),
+        const SizedBox(height: AppSpacing.xxxl),
+        content,
       ],
-    ),
+    );
+  }
+
+  Widget _footer() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      OrbitButton(
+        label: widget.editMode
+            ? 'Save changes'
+            : _lastStep
+            ? 'Enter your universe'
+            : 'Continue',
+        fullWidth: true,
+        icon: widget.editMode ? null : Icons.arrow_forward_rounded,
+        isLoading: _saving,
+        onPressed:
+            _saving || (!widget.editMode && _lastStep && !_privacyAccepted)
+            ? null
+            : _continue,
+      ),
+      // Reserve the same footer height on each onboarding step.
+      if (!widget.editMode)
+        SizedBox(
+          height: 48,
+          child: _step > 0
+              ? TextButton(
+                  onPressed: _saving ? null : _goBack,
+                  child: const Text('Back'),
+                )
+              : null,
+        ),
+    ],
   );
 
-  Widget _buildPrivacy() => _panel(
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Checkbox(
-          value: _privacyAccepted,
-          activeColor: AppColors.primary,
-          checkColor: AppColors.onPrimary,
-          onChanged: (value) => setState(
-                () => _privacyAccepted = value ?? false,
-          ),
+  Widget _form() => Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 540),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.pageHorizontal,
+          AppSpacing.pageVertical,
+          AppSpacing.pageHorizontal,
+          AppSpacing.sm,
         ),
-        const SizedBox(width: 4),
-        const Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Your privacy matters',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w600,
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _header(),
+            const SizedBox(height: AppSpacing.lg),
+            Expanded(
+              child: SingleChildScrollView(
+                key: ValueKey(widget.editMode ? -1 : _step),
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                child: _stepContent(),
               ),
-              SizedBox(height: 7),
-              Text(
-                'I understand that ORBIT is fictional. I should not use '
-                    'my real name or actual date of birth.',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 12.5,
-                  height: 1.45,
-                ),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _footer(),
+          ],
         ),
-      ],
+      ),
     ),
   );
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        children: [
-          // Use the shared global galaxy, but keep this screen subtle.
-          const Positioned.fill(
-            child: IgnorePointer(
-              child: ColoredBox(color: Color(0xA612101D)),
-            ),
-          ),
-          SafeArea(
-            child: _loading
-                ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            )
-                : _loadingError != null
-                ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _loadingError!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    FilledButton(
-                      onPressed: _loadSavedPersona,
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
-            )
-                : SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 38),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 540),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          if (widget.editMode) ...[
-                            IconButton(
-                              onPressed: () => Navigator.maybePop(context),
-                              icon: const Icon(
-                                Icons.arrow_back_rounded,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                          ],
-                          Image.asset(
-                            'lib/core/assets/orbit_wordmark.png',
-                            width: 110,
-                            height: 44,
-                            alignment: Alignment.centerLeft,
-                            errorBuilder: (_, __, ___) => const Text(
-                              'ORBIT',
-                              style: TextStyle(
-                                fontSize: 21,
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 22),
-                      Text(
-                        widget.editMode ? 'Edit your persona' : 'Build your identity',
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
+    return PopScope<Object?>(
+      canPop: !_saving && (widget.editMode || _step == 0),
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && !widget.editMode && !_saving && _step > 0) _goBack();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _loadingError != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xxl),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _loadingError!,
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.bodyMuted,
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        widget.editMode
-                            ? 'Make changes to your fictional identity.'
-                            : 'A little about you, before your story begins.',
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13.5,
+                        const SizedBox(height: AppSpacing.md),
+                        FilledButton(
+                          onPressed: _loadSavedPersona,
+                          child: const Text('Retry'),
                         ),
-                      ),
-                      const SizedBox(height: 24),
-                      _buildIdentity(),
-                      const SizedBox(height: 12),
-                      _buildGender(),
-                      const SizedBox(height: 12),
-                      _buildOrigin(),
-                      const SizedBox(height: 12),
-                      _buildBirthday(),
-                      const SizedBox(height: 12),
-                      _buildZodiacPreview(),
-                      if (!widget.editMode) ...[
-                        const SizedBox(height: 12),
-                        _buildPrivacy(),
                       ],
-                      const SizedBox(height: 23),
-                      FilledButton(
-                        onPressed: _saving ? null : _continue,
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 52),
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.onPrimary,
-                          disabledBackgroundColor: AppColors.elevatedSurface,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: _saving
-                            ? const SizedBox.square(
-                          dimension: 19,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.onPrimary,
-                          ),
-                        )
-                            : Text(
-                          widget.editMode ? 'Save changes' : 'Continue',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            ),
-          ),
-        ],
+                )
+              : _form(),
+        ),
       ),
     );
   }

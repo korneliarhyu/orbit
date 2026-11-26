@@ -27,6 +27,7 @@ const MODEL = "gpt-4.1-mini";
 const ROOM_LOCK_MS = 65_000;
 const HISTORY_LIMIT = 40;
 const MAX_BATCH_MESSAGES = 20;
+const READ_DELAY_MS = 700;
 
 const TRAITS = new Set([
   "Intellectual", "Playful", "Kind", "Adventurous", "Open-minded",
@@ -335,6 +336,75 @@ export const replyAsNpc = onCall(
       if (!combinedText) {
         throw new HttpsError("invalid-argument", "Empty message batch.");
       }
+
+      // --------------------------------------------------
+      // MESSAGE DELIVERY & READ RECEIPTS
+      // --------------------------------------------------
+
+      const updateReceipts = async (markAsRead: boolean) => {
+        await db.runTransaction(async (tx) => {
+          const [currentMatch, ...currentMessages] =
+            await Promise.all([
+              tx.get(matchRef),
+              ...pending.map((doc) => tx.get(doc.ref)),
+            ]);
+
+          // Ensure the current invocation still owns the lock.
+          if (
+            !currentMatch.exists ||
+            currentMatch.get("replyLock")?.id !== lockId
+          ) {
+            throw new HttpsError("aborted", "Reply lock expired.");
+          }
+
+          // Do not process ended conversations.
+          if (
+            !isActiveRelationship(
+              currentMatch.get("relationshipStatus")
+            )
+          ) {
+            throw new HttpsError(
+              "failed-precondition",
+              "This conversation has ended."
+            );
+          }
+
+          for (const doc of currentMessages) {
+            if (
+              !doc.exists ||
+              doc.get("sender") !== "player" ||
+              doc.get("replyBatchId")
+            ) {
+              continue;
+            }
+
+            const updates: Record<string, FieldValue> = {};
+
+            if (!doc.get("deliveredAt")) {
+              updates.deliveredAt = FieldValue.serverTimestamp();
+            }
+
+            if (markAsRead && !doc.get("readAt")) {
+              updates.readAt = FieldValue.serverTimestamp();
+            }
+
+            if (Object.keys(updates).length > 0) {
+              tx.update(doc.ref, updates);
+            }
+          }
+        });
+      };
+
+      // NPC receives the pending messages.
+      await updateReceipts(false);
+
+      // Simulate a short reading delay.
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, READ_DELAY_MS)
+      );
+
+      // NPC reads the pending messages.
+      await updateReceipts(true);
 
       const playerRequestedEnd = isExplicitEndRequest(combinedText);
       const rawScore = (npc.intimacy as { score?: unknown } | undefined)?.score;

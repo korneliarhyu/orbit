@@ -7,8 +7,7 @@ class PlayerAuthService {
   static final instance = PlayerAuthService._();
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  static final RegExp _usernamePattern =
-  RegExp(r'^[a-z0-9_]{5,12}$');
+  static final RegExp _usernamePattern = RegExp(r'^[a-z0-9_]{5,12}$');
 
   static const String _emailDomain = 'users.orbit.example';
 
@@ -19,7 +18,7 @@ class PlayerAuthService {
     if (!_usernamePattern.hasMatch(normalized)) {
       throw const FormatException(
         'Username must be 5-12 characters '
-            'and contain only letters, numbers, or underscores.',
+        'and contain only letters, numbers, or underscores.',
       );
     }
 
@@ -35,7 +34,7 @@ class PlayerAuthService {
 
     final credential = await _executeAuth(
       'REGISTER',
-          () => _auth.createUserWithEmailAndPassword(
+      () => _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       ),
@@ -66,10 +65,7 @@ class PlayerAuthService {
 
     return _executeAuth(
       'LOGIN',
-          () => _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      ),
+      () => _auth.signInWithEmailAndPassword(email: email, password: password),
     );
   }
 
@@ -81,9 +77,9 @@ class PlayerAuthService {
 
   // CENTRALIZED AUTH ERROR HANDLING
   Future<T> _executeAuth<T>(
-      String action,
-      Future<T> Function() operation,
-      ) async {
+    String action,
+    Future<T> Function() operation,
+  ) async {
     try {
       final result = await operation();
 

@@ -17,13 +17,10 @@ class NpcAvatarWidget extends StatefulWidget {
   final double width;
 
   @override
-  State<NpcAvatarWidget> createState() =>
-      _NpcAvatarWidgetState();
+  State<NpcAvatarWidget> createState() => _NpcAvatarWidgetState();
 }
 
-class _NpcAvatarWidgetState
-    extends State<NpcAvatarWidget> {
-
+class _NpcAvatarWidgetState extends State<NpcAvatarWidget> {
   // ====================================================
   // ASSET CONFIGURATION
   // ====================================================
@@ -43,21 +40,15 @@ class _NpcAvatarWidgetState
   void initState() {
     super.initState();
 
-    _selectedAvatarFuture = _resolveAvatar(
-      widget.avatarIndex,
-    );
+    _selectedAvatarFuture = _resolveAvatar(widget.avatarIndex);
   }
 
   @override
-  void didUpdateWidget(
-      covariant NpcAvatarWidget oldWidget,
-      ) {
+  void didUpdateWidget(covariant NpcAvatarWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.avatarIndex != widget.avatarIndex) {
-      _selectedAvatarFuture = _resolveAvatar(
-        widget.avatarIndex,
-      );
+      _selectedAvatarFuture = _resolveAvatar(widget.avatarIndex);
     }
   }
 
@@ -70,10 +61,7 @@ class _NpcAvatarWidgetState
   }
 
   static Future<List<String>> _readAvatarFiles() async {
-    final manifest =
-    await AssetManifest.loadFromAssetBundle(
-      rootBundle,
-    );
+    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
 
     final all = manifest.listAssets();
 
@@ -83,9 +71,7 @@ class _NpcAvatarWidgetState
         return false;
       }
 
-      final relative = path.substring(
-        '$_root/'.length,
-      );
+      final relative = path.substring('$_root/'.length);
 
       // Ignore subfolders like front/.
       if (relative.contains('/')) {
@@ -97,23 +83,18 @@ class _NpcAvatarWidgetState
       // Only accept numbered portrait assets.
       // Examples:
       // 01.png, 02.png, 03.png, 04.webp
-      return RegExp(
-        r'^\d{2,}\.(png|webp|jpg|jpeg)$',
-      ).hasMatch(lower);
-    }).toList()
-      ..sort();
+      return RegExp(r'^\d{2,}\.(png|webp|jpg|jpeg)$').hasMatch(lower);
+    }).toList()..sort();
 
     if (files.isEmpty) {
       throw StateError(
         'No NPC portraits found in $_root/. '
-            'Add files such as 01.png, 02.png, 03.png '
-            'and register the directory in pubspec.yaml.',
+        'Add files such as 01.png, 02.png, 03.png '
+        'and register the directory in pubspec.yaml.',
       );
     }
 
-    debugPrint(
-      'ORBIT NPC: ${files.length} portraits loaded.',
-    );
+    debugPrint('ORBIT NPC: ${files.length} portraits loaded.');
 
     return files;
   }
@@ -122,9 +103,7 @@ class _NpcAvatarWidgetState
   // SELECT AVATAR
   // ====================================================
 
-  static Future<String> _resolveAvatar(
-      int avatarIndex,
-      ) async {
+  static Future<String> _resolveAvatar(int avatarIndex) async {
     final files = await _loadAvatarFiles();
 
     // Wrap around when avatarIndex exceeds
@@ -143,28 +122,20 @@ class _NpcAvatarWidgetState
     return FutureBuilder<String>(
       future: _selectedAvatarFuture,
       builder: (context, snapshot) {
-
         // Error state
         if (snapshot.hasError) {
           return Center(
             child: Text(
               '${snapshot.error}',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.redAccent,
-                fontSize: 11,
-              ),
+              style: const TextStyle(color: Colors.redAccent, fontSize: 11),
             ),
           );
         }
 
         // Loading state
         if (!snapshot.hasData) {
-          return const Center(
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-            ),
-          );
+          return const Center(child: CircularProgressIndicator(strokeWidth: 2));
         }
 
         // Display complete NPC portrait.
@@ -175,9 +146,7 @@ class _NpcAvatarWidgetState
           filterQuality: FilterQuality.high,
           gaplessPlayback: true,
           errorBuilder: (context, error, stackTrace) {
-            debugPrint(
-              'ORBIT NPC IMAGE ERROR: $error',
-            );
+            debugPrint('ORBIT NPC IMAGE ERROR: $error');
 
             return const Center(
               child: Icon(

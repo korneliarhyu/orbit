@@ -2,8 +2,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/constants/app_radius.dart';
+import '../core/constants/app_spacing.dart';
 import '../core/theme/app_colors.dart';
+import '../core/theme/app_text_styles.dart';
 import '../core/widgets/app_avatar.dart';
+import '../core/widgets/app_chat_tile.dart';
+import '../core/widgets/orbit_logo.dart';
 import 'chat/chat_screen.dart';
 import 'chat/npc_chat_service.dart';
 import 'discover/discover_screen.dart';
@@ -26,7 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  bool _showSearch = false;
   final PageController _pageController = PageController();
 
   late final Stream<List<OrbitMatch>> _matchesStream;
@@ -84,9 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ChatScreen(npcId: match.npcId),
-      ),
+      MaterialPageRoute<void>(builder: (_) => ChatScreen(npcId: match.npcId)),
     );
   }
 
@@ -95,11 +97,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final query = _searchController.text.trim().toLowerCase();
     if (query.isEmpty) return matches;
 
-    return matches.where((match) {
-      return match.name.toLowerCase().contains(query) ||
-          match.archetype.toLowerCase().contains(query) ||
-          (match.career?.toLowerCase().contains(query) ?? false);
-    }).toList(growable: false);
+    return matches
+        .where((match) {
+          return match.name.toLowerCase().contains(query) ||
+              match.archetype.toLowerCase().contains(query) ||
+              (match.career?.toLowerCase().contains(query) ?? false);
+        })
+        .toList(growable: false);
   }
 
   @override
@@ -120,125 +124,79 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ============================================================
-  // WHATSAPP-INSPIRED INBOX - DIM GALAXY, NO DIVIDERS
-  // ============================================================
-
-  void _toggleSearch() {
-    setState(() {
-      _showSearch = !_showSearch;
-      if (!_showSearch) _searchController.clear();
-    });
-
-    if (_showSearch) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _searchFocusNode.requestFocus();
-      });
-    } else {
-      _searchFocusNode.unfocus();
-    }
-  }
-
   Widget _buildChatsPage() {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // The existing galaxy is painted by main.dart.
-        // This overlay dims it only on the Chats tab.
-        const Positioned.fill(
-          child: IgnorePointer(
-            child: ColoredBox(
-              color: Color(0x8012101D),
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.pageHorizontal,
+              AppSpacing.sm,
+              AppSpacing.pageHorizontal,
+              AppSpacing.sm,
+            ),
+            child: _buildHeader(),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.pageHorizontal,
+              ),
+              child: _buildMatchesList(),
             ),
           ),
-        ),
-        SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 8),
-                child: _buildHeader(context),
-              ),
-
-              // WhatsApp-style: search is shown on demand.
-              if (_showSearch)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                  child: _buildSearchBar(),
-                ),
-
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-                  child: _buildMatchesList(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-
+  Widget _buildHeader() {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Image.asset(
-          'lib/core/assets/orbit_wordmark.png',
-          width: 80,
-          fit: BoxFit.contain,
-        ),
-
-        const SizedBox(width: 14),
-
-        Expanded(
-          child: SizedBox(
-            height: 42,
-            child: _buildSearchBar(),
-          ),
-        ),
+        const OrbitLogo(wordmark: true, size: 80),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(child: _buildSearchBar()),
       ],
     );
   }
 
   Widget _buildSearchBar() {
-    return Container(
-      height: 46,
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.93),
-        borderRadius: BorderRadius.circular(25),
-      ),
-      child: TextField(
-        controller: _searchController,
-        focusNode: _searchFocusNode,
-        onChanged: (_) => setState(() {}),
-        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-        decoration: InputDecoration(
-          hintText: 'Search conversations...',
-          hintStyle: const TextStyle(color: AppColors.textSecondary),
-          prefixIcon: const Icon(
-            Icons.search_rounded,
-            color: AppColors.textSecondary,
-          ),
-          suffixIcon: _searchController.text.isNotEmpty
-              ? IconButton(
-            tooltip: 'Clear search',
-            icon: const Icon(Icons.close_rounded, size: 18),
-            color: AppColors.textSecondary,
-            onPressed: () {
-              _searchController.clear();
-              setState(() {});
-            },
-          )
-              : null,
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          filled: false,
-          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppRadius.searchBar),
+      borderSide: BorderSide.none,
+    );
+
+    return TextField(
+      controller: _searchController,
+      focusNode: _searchFocusNode,
+      onChanged: (_) => setState(() {}),
+      style: AppTextStyles.input,
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: 'Search conversations...',
+        hintStyle: AppTextStyles.inputHint,
+        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+        suffixIcon: _searchController.text.isNotEmpty
+            ? IconButton(
+                tooltip: 'Clear search',
+                icon: const Icon(Icons.close_rounded, size: 18),
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() {});
+                },
+              )
+            : null,
+        filled: true,
+        fillColor: AppColors.surface,
+        border: border,
+        enabledBorder: border,
+        focusedBorder: border.copyWith(
+          borderSide: const BorderSide(color: AppColors.primary),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
         ),
       ),
     );
@@ -263,7 +221,7 @@ class _HomeScreenState extends State<HomeScreen> {
           return _buildEmptyState(noMatchesYet: allMatches.isEmpty);
         }
 
-        // WhatsApp-like conversation rows with no dividers or enclosing card.
+        // Open conversation list; the shared tile owns row styling.
         return ListView.builder(
           padding: EdgeInsets.zero,
           itemCount: matches.length,
@@ -282,9 +240,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _status(String text) => Center(
-    child: Text(text, style: const TextStyle(color: AppColors.textSecondary)),
-  );
+  Widget _status(String text) =>
+      Center(child: Text(text, style: AppTextStyles.bodyMuted));
 
   Widget _buildEmptyState({required bool noMatchesYet}) {
     final hasSearch = _searchController.text.trim().isNotEmpty;
@@ -308,24 +265,16 @@ class _HomeScreenState extends State<HomeScreen> {
             color: AppColors.primary,
             size: 42,
           ),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpacing.md),
+          Text(title, textAlign: TextAlign.center, style: AppTextStyles.title),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.textSecondary),
+            style: AppTextStyles.bodyMuted,
           ),
           if (noMatchesYet) ...[
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.xl),
             TextButton.icon(
               onPressed: () => _goToTab(1),
               icon: const Icon(Icons.explore_outlined),
@@ -342,13 +291,6 @@ class _HomeScreenState extends State<HomeScreen> {
       currentIndex: _selectedTab,
       onTap: _goToTab,
       type: BottomNavigationBarType.fixed,
-      // Match the same Lunar Night dim used in Chats and Discover.
-      backgroundColor: const Color(0x8012101D),
-      elevation: 0,
-      selectedItemColor: AppColors.primary,
-      unselectedItemColor: AppColors.textSecondary,
-      selectedFontSize: 11,
-      unselectedFontSize: 11,
       items: const [
         BottomNavigationBarItem(
           icon: Icon(Icons.chat_bubble_outline_rounded),
@@ -418,12 +360,7 @@ class _MatchConversationTileState extends State<_MatchConversationTile> {
   void _initializeStreams() {
     final service = NpcChatService.instance;
     _matchDetailStream = service.watchMatch(widget.match.npcId);
-    _latestMessageStream = service
-        .matchRef(widget.match.npcId)
-        .collection('messages')
-        .orderBy('createdAt', descending: true)
-        .limit(1)
-        .snapshots();
+    _latestMessageStream = service.watchLastMessage(widget.match.npcId);
   }
 
   String _formatMessageTime(DateTime date) {
@@ -455,7 +392,9 @@ class _MatchConversationTileState extends State<_MatchConversationTile> {
         String preview = widget.match.preview;
         String time = widget.match.timeLabel;
         if (lastText != null && lastText.trim().isNotEmpty) {
-          preview = sender == 'player' ? 'You: ${lastText.trim()}' : lastText.trim();
+          preview = sender == 'player'
+              ? 'You: ${lastText.trim()}'
+              : lastText.trim();
         }
         if (createdAt is Timestamp) {
           time = _formatMessageTime(createdAt.toDate());
@@ -469,113 +408,15 @@ class _MatchConversationTileState extends State<_MatchConversationTile> {
               detailSnapshot.data?.data(),
             );
 
-            return Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: widget.onTap,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  child: Row(
-                    children: [
-                      OrbitAvatar(
-                        name: widget.match.name,
-                        radius: 29,
-                        avatarIndex: avatarIndex,
-                        // A wider crop: show hair and more of the shoulders.
-                        portraitScale: 1.38,
-                        highlighted: widget.match.unread,
-                      ),
-                      const SizedBox(width: 13),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    widget.match.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: AppColors.textPrimary,
-                                      fontSize: 17,
-                                      fontWeight: widget.match.unread
-                                          ? FontWeight.w800
-                                          : FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  time,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    preview,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: widget.match.unread
-                                          ? AppColors.textPrimary
-                                          : AppColors.textSecondary,
-                                      fontSize: 13,
-                                      fontWeight: widget.match.unread
-                                          ? FontWeight.w600
-                                          : FontWeight.normal,
-                                    ),
-                                  ),
-                                ),
-                                if (widget.match.unread) ...[
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    height: 21,
-                                    width: 21,
-                                    alignment: Alignment.center,
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.primary,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Text('1',
-                                        style: TextStyle(
-                                            color: AppColors.onPrimary,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700)),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      IconButton(
-                        tooltip: widget.isFavorite
-                            ? 'Remove from favorites'
-                            : 'Add to favorites',
-                        onPressed: widget.onToggleFavorite,
-                        visualDensity: VisualDensity.compact,
-                        iconSize: 19,
-                        icon: Icon(
-                          widget.isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
-                          color: widget.isFavorite
-                              ? AppColors.secondary
-                              : AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            return OrbitChatTile(
+              name: widget.match.name,
+              message: preview,
+              time: time,
+              avatarIndex: avatarIndex,
+              unreadCount: widget.match.unread ? 1 : 0,
+              isFavorite: widget.isFavorite,
+              onToggleFavorite: widget.onToggleFavorite,
+              onTap: widget.onTap,
             );
           },
         );

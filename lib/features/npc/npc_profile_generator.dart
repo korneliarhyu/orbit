@@ -5,11 +5,9 @@ import '../npc/npc_career.dart';
 import 'npc_bio_generator.dart';
 
 class NpcProfileGenerator {
-  NpcProfileGenerator({
-    NpcGenerator? identityGenerator,
-    Random? random,
-  })  : _identityGenerator = identityGenerator ?? NpcGenerator(),
-        _random = random ?? Random();
+  NpcProfileGenerator({NpcGenerator? identityGenerator, Random? random})
+    : _identityGenerator = identityGenerator ?? NpcGenerator(),
+      _random = random ?? Random();
 
   final NpcGenerator _identityGenerator;
   final Random _random;
@@ -46,10 +44,6 @@ class NpcProfileGenerator {
 
   // Generate a mutable deck for Discover.
   List<NpcPersona> generateBatch(int count) {
-    return List.generate(
-      count,
-          (_) => generate(),
-      growable: true,
-    );
+    return List.generate(count, (_) => generate(), growable: true);
   }
 }
