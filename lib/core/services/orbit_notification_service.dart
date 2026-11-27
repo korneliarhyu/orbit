@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/material.dart';
 
@@ -10,8 +11,12 @@ class OrbitNotificationService {
 
   static final OrbitNotificationService instance = OrbitNotificationService._();
 
+  final _queue = Queue<_NotificationRequest>();
   OverlayEntry? _entry;
   Object? _owner;
+  bool _drainScheduled = false;
+  static const _bannerGap = Duration(milliseconds: 2500);
+  Timer? _gapTimer;
 
   bool get isShowing => _entry != null;
 
@@ -25,6 +30,7 @@ class OrbitNotificationService {
     Duration duration = const Duration(seconds: 4),
     Object? owner,
     OverlayState? targetOverlay,
+    bool Function()? shouldShow,
   }) {
     if (!context.mounted || message.trim().isEmpty) return;
 
@@ -32,8 +38,52 @@ class OrbitNotificationService {
         targetOverlay ?? Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null || !overlay.mounted) return;
 
-    // Only one active banner for now. A queue is a later step.
-    dismiss();
+    _queue.addLast(
+      _NotificationRequest(
+        context: context,
+        overlay: overlay,
+        name: name,
+        message: message,
+        avatarIndex: avatarIndex,
+        imageUrl: imageUrl,
+        onTap: onTap,
+        duration: duration,
+        owner: owner,
+        shouldShow: shouldShow,
+      ),
+    );
+    _scheduleDrain();
+  }
+
+  // Insert only after the current frame, including after a banner closes.
+  void _scheduleDrain() {
+    if (_drainScheduled ||
+        _gapTimer != null ||
+        _entry != null ||
+        _queue.isEmpty) {
+      return;
+    }
+    _drainScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _drainScheduled = false;
+      _showNext();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _showNext() {
+    if (_entry != null || _gapTimer != null) return;
+    while (_queue.isNotEmpty) {
+      final request = _queue.removeFirst();
+      if (!request.context.mounted || !request.overlay.mounted) continue;
+      // The chat/session may have changed while this notification waited.
+      if (request.shouldShow?.call() == false) continue;
+      _insert(request);
+      return;
+    }
+  }
+
+  void _insert(_NotificationRequest request) {
     late final OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => Positioned(
@@ -51,19 +101,19 @@ class OrbitNotificationService {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 480),
                 child: _AnimatedNotification(
-                  duration: duration,
+                  duration: request.duration,
                   onDismissed: () => _remove(entry),
                   child: OrbitNotificationBanner(
-                    name: name,
-                    message: message,
-                    avatarIndex: avatarIndex,
-                    imageUrl: imageUrl,
-                    onTap: onTap == null
+                    name: request.name,
+                    message: request.message,
+                    avatarIndex: request.avatarIndex,
+                    imageUrl: request.imageUrl,
+                    onTap: request.onTap == null
                         ? null
                         : () {
                             if (!identical(_entry, entry)) return;
                             _remove(entry);
-                            onTap();
+                            request.onTap!();
                           },
                   ),
                 ),
@@ -73,25 +123,73 @@ class OrbitNotificationService {
         ),
       ),
     );
+    request.overlay.insert(entry);
     _entry = entry;
-    _owner = owner;
-    overlay.insert(entry);
+    _owner = request.owner;
   }
 
-  // If an owner is supplied, leave other owners' notifications alone.
+  // No owner: clear everything. With owner: remove only its banners,
+  // including those that have not been displayed yet.
   void dismiss({Object? owner}) {
-    if (owner != null && !identical(owner, _owner)) return;
+    if (owner == null) {
+      _queue.clear();
+      _gapTimer?.cancel();
+      _gapTimer = null;
+    } else {
+      _queue.removeWhere((request) => identical(request.owner, owner));
+    }
     final entry = _entry;
-    if (entry != null) _remove(entry);
+    if (entry != null && (owner == null || identical(owner, _owner))) {
+      _remove(entry, startGap: owner != null);
+    } else {
+      _scheduleDrain();
+    }
   }
 
-  void _remove(OverlayEntry entry) {
+  void _remove(OverlayEntry entry, {bool startGap = true}) {
     if (!identical(_entry, entry)) return;
     _entry = null;
     _owner = null;
     entry.remove();
     entry.dispose();
+    if (startGap) {
+      // Keep the gap even if the queue is currently empty: another
+      // message may arrive before the cooldown finishes.
+      _gapTimer?.cancel();
+      _gapTimer = Timer(_bannerGap, () {
+        _gapTimer = null;
+        _scheduleDrain();
+      });
+    } else {
+      _scheduleDrain();
+    }
   }
+}
+
+class _NotificationRequest {
+  const _NotificationRequest({
+    required this.context,
+    required this.overlay,
+    required this.name,
+    required this.message,
+    required this.duration,
+    this.avatarIndex,
+    this.imageUrl,
+    this.onTap,
+    this.owner,
+    this.shouldShow,
+  });
+
+  final BuildContext context;
+  final OverlayState overlay;
+  final String name;
+  final String message;
+  final Duration duration;
+  final int? avatarIndex;
+  final String? imageUrl;
+  final VoidCallback? onTap;
+  final Object? owner;
+  final bool Function()? shouldShow;
 }
 
 class _AnimatedNotification extends StatefulWidget {

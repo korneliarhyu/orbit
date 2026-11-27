@@ -1,12 +1,16 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/services/ai_service.dart';
 import '../../core/services/active_conversation_tracker.dart';
+import '../../core/utils/message_visibility.dart';
+import '../../core/utils/message_read_status.dart';
+import '../discover/match_service.dart';
 import 'npc_chat_service.dart';
 import '../npc/npc_avatar_widget.dart';
 
@@ -26,7 +30,7 @@ class ChatScreen extends StatefulWidget {
 // CHAT SCREEN STATE
 // ======================================================
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final TextEditingController _controller = TextEditingController();
 
   final ScrollController _scrollController = ScrollController();
@@ -36,17 +40,22 @@ class _ChatScreenState extends State<ChatScreen> {
   Stream<QuerySnapshot<Map<String, dynamic>>>? _messagesStream;
 
   bool _sending = false;
-  bool _replyRunning = false;
 
   int _previousMessageCount = -1;
 
-  Timer? _replyDebounce;
+  StreamSubscription<NpcReplyFailure>? _replyFailureSubscription;
   Timer? _revealTimer;
 
   DateTime? _nextReveal;
+  static const _typingWindow = Duration(seconds: 3);
 
-  String? _pendingMessageId;
-  String? _awaitingReplyToMessageId;
+  final _readWrites = <String>{};
+  final _markedRead = <String>{};
+  String? _readOwnerUid;
+  bool _openingMatch = false;
+  bool _openedMatch = false;
+
+  final _ai = AiService.instance;
 
   // ====================================================
   // INITIALIZATION
@@ -54,11 +63,34 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _readOwnerUid = FirebaseAuth.instance.currentUser?.uid;
+    WidgetsBinding.instance.addObserver(this);
 
     final service = NpcChatService.instance;
 
     _matchStream = service.watchMatch(widget.npcId);
     _messagesStream = service.watchMessages(widget.npcId);
+    _ai.addListener(_onReplyStateChanged);
+    _replyFailureSubscription = _ai.failures.listen(_onReplyFailure);
+  }
+
+  void _onReplyStateChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onReplyFailure(NpcReplyFailure failure) {
+    if (failure.uid != _readOwnerUid ||
+        failure.npcId != widget.npcId ||
+        !_canMarkRead) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'NPC reply failed; messages were saved: ${failure.error}',
+        ),
+      ),
+    );
   }
 
   @override
@@ -70,6 +102,79 @@ class _ChatScreenState extends State<ChatScreen> {
       npcId: widget.npcId,
       route: ModalRoute.of(context),
     );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (mounted && state == AppLifecycleState.resumed) {
+      setState(() {});
+    }
+  }
+
+  bool get _canMarkRead {
+    if (!mounted ||
+        _readOwnerUid == null ||
+        FirebaseAuth.instance.currentUser?.uid != _readOwnerUid) {
+      return false;
+    }
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return (lifecycle == null || lifecycle == AppLifecycleState.resumed) &&
+        ModalRoute.of(context)?.isCurrent == true &&
+        ActiveConversationTracker.instance.isActive(widget.npcId);
+  }
+
+  // Run only after the visible conversation has been built.
+  void _queueReadTracking(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> documents, {
+    required bool markFirstMessage,
+  }) {
+    final now = DateTime.now();
+    final unread = documents
+        .where(
+          (doc) =>
+              !doc.metadata.hasPendingWrites &&
+              !_readWrites.contains(doc.id) &&
+              !_markedRead.contains(doc.id) &&
+              MessageReadStatus.isUnread(doc.data(), now: now),
+        )
+        .toList();
+    if (unread.isEmpty && (!markFirstMessage || _openingMatch || _openedMatch))
+      return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_canMarkRead) return;
+      if (markFirstMessage && !_openingMatch && !_openedMatch) {
+        unawaited(_markFirstMessageRead());
+      }
+      for (final doc in unread) {
+        if (!_canMarkRead) break;
+        if (_markedRead.contains(doc.id) || !_readWrites.add(doc.id)) continue;
+        unawaited(_markNpcMessageRead(doc.id));
+      }
+    });
+  }
+
+  Future<void> _markNpcMessageRead(String messageId) async {
+    try {
+      await NpcChatService.instance.markMessageAsRead(widget.npcId, messageId);
+      _markedRead.add(messageId);
+    } catch (error) {
+      debugPrint('ORBIT mark message read: $error');
+    } finally {
+      _readWrites.remove(messageId);
+    }
+  }
+
+  Future<void> _markFirstMessageRead() async {
+    _openingMatch = true;
+    try {
+      await MatchService.instance.markOpened(widget.npcId);
+      _openedMatch = true;
+    } catch (error) {
+      debugPrint('ORBIT mark first message read: $error');
+    } finally {
+      _openingMatch = false;
+    }
   }
 
   // ====================================================
@@ -102,29 +207,27 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _controller.text.trim();
 
     if (text.isEmpty || _sending) return;
+    final ownerUid = FirebaseAuth.instance.currentUser?.uid;
+    if (ownerUid == null || ownerUid != _readOwnerUid) return;
+    final npcId = widget.npcId;
 
     // Firestore NPC chat
     setState(() => _sending = true);
 
     try {
       final messageId = await NpcChatService.instance.sendPlayerMessage(
-        npcId: widget.npcId,
+        npcId: npcId,
         text: text,
       );
+
+      // Schedule even if the player left while the send was in flight.
+      _ai.queueReply(ownerUid: ownerUid, npcId: npcId, messageId: messageId);
 
       if (!mounted) return;
 
       if (_controller.text.trim() == text) {
         _controller.clear();
       }
-
-      setState(() {
-        _pendingMessageId = messageId;
-      });
-
-      _replyDebounce?.cancel();
-
-      _replyDebounce = Timer(const Duration(seconds: 2), _flushNpcReply);
 
       _scrollToBottom();
     } catch (error) {
@@ -135,63 +238,6 @@ class _ChatScreenState extends State<ChatScreen> {
     } finally {
       if (mounted) {
         setState(() => _sending = false);
-      }
-    }
-  }
-
-  // ====================================================
-  // AI NPC REPLY
-  // ====================================================
-  Future<void> _flushNpcReply() async {
-    if (!mounted || _replyRunning || _pendingMessageId == null) {
-      return;
-    }
-
-    final messageId = _pendingMessageId!;
-
-    setState(() {
-      _pendingMessageId = null;
-      _replyRunning = true;
-      _awaitingReplyToMessageId = messageId;
-    });
-
-    var busy = false;
-
-    try {
-      final accepted = await AiService.instance.replyAsNpc(
-        npcId: widget.npcId,
-        messageId: messageId,
-      );
-
-      if (!accepted) {
-        busy = true;
-        _pendingMessageId ??= messageId;
-      }
-    } catch (error) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('NPC reply failed; messages were saved: $error'),
-        ),
-      );
-    } finally {
-      _replyRunning = false;
-      _awaitingReplyToMessageId = null;
-
-      if (mounted) {
-        setState(() {});
-      }
-
-      if (mounted && _pendingMessageId != null) {
-        _replyDebounce?.cancel();
-
-        _replyDebounce = Timer(
-          busy
-              ? const Duration(seconds: 2)
-              : const Duration(milliseconds: 1800),
-          _flushNpcReply,
-        );
       }
     }
   }
@@ -239,8 +285,10 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await NpcChatService.instance.endMatch(widget.npcId);
 
-      _replyDebounce?.cancel();
-      _pendingMessageId = null;
+      final ownerUid = _readOwnerUid;
+      if (ownerUid != null) {
+        _ai.cancelQueuedReply(ownerUid: ownerUid, npcId: widget.npcId);
+      }
 
       if (!mounted) return;
 
@@ -286,9 +334,11 @@ class _ChatScreenState extends State<ChatScreen> {
   // ====================================================
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     ActiveConversationTracker.instance.unregister(this);
 
-    _replyDebounce?.cancel();
+    _ai.removeListener(_onReplyStateChanged);
+    unawaited(_replyFailureSubscription?.cancel());
     _revealTimer?.cancel();
 
     _controller.dispose();
@@ -652,9 +702,10 @@ class _ChatScreenState extends State<ChatScreen> {
         String? awaitingBatchId;
         bool awaitingMessageRead = false;
 
-        if (_awaitingReplyToMessageId != null) {
+        final awaitingReplyToMessageId = _ai.activeMessageId(widget.npcId);
+        if (awaitingReplyToMessageId != null) {
           for (final doc in documents) {
-            if (doc.id == _awaitingReplyToMessageId) {
+            if (doc.id == awaitingReplyToMessageId) {
               final data = doc.data();
 
               awaitingMessageRead = data['readAt'] is Timestamp;
@@ -673,25 +724,26 @@ class _ChatScreenState extends State<ChatScreen> {
         }
 
         DateTime? upcomingReveal;
+        DateTime? upcomingNpcReveal;
         bool hasVisibleReply = false;
 
         final now = DateTime.now();
 
-        // Build visible messages
+        // Apply the same reveal-time rules as Inbox.
         for (final doc in documents) {
           final message = doc.data();
-          final displayAt = message['displayAt'];
+          final at = MessageVisibility.revealAt(message);
+          if (at == null) continue;
 
-          if (displayAt is Timestamp) {
-            final showAt = displayAt.toDate();
-
-            if (showAt.isAfter(now)) {
-              if (upcomingReveal == null || showAt.isBefore(upcomingReveal)) {
-                upcomingReveal = showAt;
-              }
-
-              continue;
+          if (at.isAfter(now)) {
+            if (upcomingReveal == null || at.isBefore(upcomingReveal)) {
+              upcomingReveal = at;
             }
+            if (message['sender'] == 'npc' &&
+                (upcomingNpcReveal == null || at.isBefore(upcomingNpcReveal))) {
+              upcomingNpcReveal = at;
+            }
+            continue;
           }
 
           if (awaitingBatchId != null &&
@@ -700,34 +752,67 @@ class _ChatScreenState extends State<ChatScreen> {
             hasVisibleReply = true;
           }
 
-          final createdAt = message['createdAt'];
-
           entries.add(
             _ChatEntry(
               text: message['text'] as String? ?? '',
               isMine: message['sender'] == 'player',
-              at: createdAt is Timestamp ? createdAt.toDate() : null,
+              at: at,
               deliveryStatus: _resolveDeliveryStatus(message),
             ),
           );
         }
 
-        _scheduleReveal(upcomingReveal);
+        // A message created earlier can be revealed after a newer message.
+        // Sort by visible time, preserving the original order for ties.
+        final chronological = entries.indexed.toList()
+          ..sort((a, b) {
+            final aTime = a.$2.at;
+            final bTime = b.$2.at;
+            final order = aTime == null
+                ? (bTime == null ? 0 : -1)
+                : (bTime == null ? 1 : aTime.compareTo(bTime));
+            return order == 0 ? a.$1.compareTo(b.$1) : order;
+          });
+        final visibleEntries = chronological.map((item) => item.$2).toList();
 
-        // Auto-scroll
-        if (_previousMessageCount != entries.length) {
-          _previousMessageCount = entries.length;
+        // Wake up both when typing should start and when a message is due.
+        final typingAt = upcomingNpcReveal?.subtract(_typingWindow);
+        final scheduledTyping = typingAt != null && !typingAt.isAfter(now);
+        var nextRefresh = upcomingReveal;
+        if (!ended &&
+            typingAt != null &&
+            typingAt.isAfter(now) &&
+            (nextRefresh == null || typingAt.isBefore(nextRefresh))) {
+          nextRefresh = typingAt;
+        }
+        _scheduleReveal(nextRefresh);
+
+        // Preserve normal AI typing while a read message is being processed,
+        // but do not show it throughout a long scheduled delay.
+        final reactiveTyping =
+            upcomingNpcReveal == null &&
+            awaitingReplyToMessageId != null &&
+            awaitingMessageRead &&
+            !hasVisibleReply;
+        final showTyping = !ended && (reactiveTyping || scheduledTyping);
+
+        // Auto-scroll when a message becomes visible.
+        if (_previousMessageCount != visibleEntries.length) {
+          _previousMessageCount = visibleEntries.length;
           _scrollToBottom();
         }
 
-        // NPC typing indicator
-        final showTyping =
-            !ended &&
-            ((_replyRunning && awaitingMessageRead && !hasVisibleReply) ||
-                upcomingReveal != null);
+        _queueReadTracking(
+          documents,
+          markFirstMessage:
+              npc['npcStarts'] == true &&
+              first != null &&
+              first.isNotEmpty &&
+              npc['opened'] != true,
+        );
 
         return _messageList(
-          entries,
+          visibleEntries,
           companionName: npc['name'] as String? ?? 'NPC',
           avatarIndex: (npc['avatarIndex'] as num?)?.toInt() ?? 0,
           typingName: showTyping ? npc['name'] as String? ?? 'NPC' : null,

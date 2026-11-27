@@ -6,6 +6,10 @@ import 'package:flutter/material.dart';
 
 import '../../features/chat/npc_chat_service.dart';
 import '../../features/discover/match_service.dart';
+import '../../features/chat/chat_screen.dart';
+
+import '../utils/message_visibility.dart';
+
 import 'active_conversation_tracker.dart';
 import 'orbit_notification_service.dart';
 
@@ -155,12 +159,7 @@ class GlobalMessageListener with WidgetsBindingObserver {
   }
 
   DateTime? _revealAt(_MessageDoc doc) {
-    final data = doc.data();
-    final displayAt = data['displayAt'];
-    final createdAt = data['createdAt'];
-    if (displayAt is Timestamp) return displayAt.toDate();
-    if (createdAt is Timestamp) return createdAt.toDate();
-    return null;
+    return MessageVisibility.revealAt(doc.data());
   }
 
   bool _isEligible(_MessageDoc doc) {
@@ -203,15 +202,13 @@ class GlobalMessageListener with WidgetsBindingObserver {
     if (!_isCurrent(watch, token) || watch.consumed.contains(messageId)) return;
     final doc = watch.documents[messageId];
     if (doc == null || !_isEligible(doc)) return;
-    if (_revealAt(doc)!.isAfter(DateTime.now())) {
+    if (!MessageVisibility.isVisible(doc.data(), now: DateTime.now())) {
       _schedule(watch, token, doc);
       return;
     }
-    // Consume even when the player is reading this chat. Never replay it
-    // later simply because the player changes screens.
+
     watch.consumed.add(messageId);
-    final npcId = watch.match.npcId;
-    if (ActiveConversationTracker.instance.isActive(npcId)) return;
+    if (!_canShow(watch, token, messageId)) return;
 
     final overlay = navigatorKey.currentState?.overlay;
     if (overlay == null || !overlay.mounted) return;
@@ -222,8 +219,55 @@ class GlobalMessageListener with WidgetsBindingObserver {
       name: watch.match.name,
       avatarIndex: watch.match.avatarIndex,
       message: doc.data()['text'] as String,
-      // Global tap navigation will be added separately.
+
+      // Re-check at dequeue time, not just when the message arrives.
+      shouldShow: () => _canShow(watch, token, messageId),
+      // Global tap navigation
+      onTap: () => _openConversation(watch, token),
     );
+  }
+
+  void _openConversation(_ConversationWatch watch, Object token) {
+    if (!_isCurrent(watch, token) || watch.match.isEnded) {
+      return;
+    }
+
+    final npcId = watch.match.npcId;
+
+    if (ActiveConversationTracker.instance.isActive(npcId)) {
+      return;
+    }
+
+    final navigator = navigatorKey.currentState;
+
+    if (navigator == null || !navigator.mounted) return;
+
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => ChatScreen(npcId: npcId),
+      ),
+          (route) => route.isFirst,
+    );
+  }
+
+  bool _canShow(_ConversationWatch watch, Object token, String messageId) {
+    if (!_isCurrent(watch, token) || watch.match.isEnded) return false;
+    if (ActiveConversationTracker.instance.isActive(watch.match.npcId)) {
+      return false;
+    }
+
+    final doc = watch.documents[messageId];
+    if (doc == null || !_isEligible(doc)) return false;
+    if (!MessageVisibility.isVisible(doc.data(), now: DateTime.now())) {
+      return false;
+    }
+
+    // The two query streams can update at different times. A confirmed
+    // playerReadAt from either stream is enough to suppress a queued banner.
+    final created = watch.createdDocs[messageId];
+    final displayed = watch.displayDocs[messageId];
+    return created?.data()['playerReadAt'] is! Timestamp &&
+        displayed?.data()['playerReadAt'] is! Timestamp;
   }
 
   void _stopSession() {

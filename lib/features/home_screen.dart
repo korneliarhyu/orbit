@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,9 +8,12 @@ import '../core/constants/app_radius.dart';
 import '../core/constants/app_spacing.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_text_styles.dart';
+import '../core/utils/message_read_status.dart';
+import '../core/utils/message_visibility.dart';
 import '../core/widgets/app_avatar.dart';
 import '../core/widgets/app_chat_tile.dart';
 import '../core/widgets/orbit_logo.dart';
+
 import 'chat/chat_screen.dart';
 import 'chat/npc_chat_service.dart';
 import 'discover/discover_screen.dart';
@@ -83,10 +88,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openMatch(OrbitMatch match) {
-    MatchService.instance.markOpened(match.npcId).catchError((error) {
-      debugPrint('Could not mark match as opened: $error');
-    });
-
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => ChatScreen(npcId: match.npcId)),
     );
@@ -340,8 +341,11 @@ class _MatchConversationTile extends StatefulWidget {
 }
 
 class _MatchConversationTileState extends State<_MatchConversationTile> {
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _latestMessageStream;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _messagesStream;
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _matchDetailStream;
+
+  Timer? _revealTimer;
+  DateTime? _nextReveal;
 
   @override
   void initState() {
@@ -353,14 +357,40 @@ class _MatchConversationTileState extends State<_MatchConversationTile> {
   void didUpdateWidget(covariant _MatchConversationTile oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.match.npcId != widget.match.npcId) {
+      _revealTimer?.cancel();
+      _nextReveal = null;
       _initializeStreams();
     }
+  }
+
+  @override
+  void dispose() {
+    _revealTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleReveal(DateTime? at) {
+    if (_nextReveal == at) return;
+
+    _revealTimer?.cancel();
+    _nextReveal = at;
+    if (at == null) return;
+
+    final delay = at.difference(DateTime.now());
+    _revealTimer = Timer(
+      (delay.isNegative ? Duration.zero : delay) +
+          const Duration(milliseconds: 20),
+      () {
+        _nextReveal = null;
+        if (mounted) setState(() {});
+      },
+    );
   }
 
   void _initializeStreams() {
     final service = NpcChatService.instance;
     _matchDetailStream = service.watchMatch(widget.match.npcId);
-    _latestMessageStream = service.watchLastMessage(widget.match.npcId);
+    _messagesStream = service.watchMessages(widget.match.npcId);
   }
 
   String _formatMessageTime(DateTime date) {
@@ -379,15 +409,57 @@ class _MatchConversationTileState extends State<_MatchConversationTile> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _latestMessageStream,
+      stream: _messagesStream,
       builder: (context, messageSnapshot) {
+        final now = DateTime.now();
         Map<String, dynamic>? latest;
-        if (messageSnapshot.hasData && messageSnapshot.data!.docs.isNotEmpty) {
-          latest = messageSnapshot.data!.docs.first.data();
+        DateTime? latestAt;
+        DateTime? upcomingReveal;
+        var unreadMessages = 0;
+
+        // StreamBuilder also rebuilds when the next scheduled message
+        // becomes visible, even if Firestore has not changed.
+        if (messageSnapshot.hasData &&
+            messageSnapshot.connectionState != ConnectionState.waiting &&
+            !messageSnapshot.hasError) {
+          for (final doc in messageSnapshot.data!.docs) {
+            final message = doc.data();
+            final text = message['text'];
+            final at = MessageVisibility.revealAt(message);
+            if (at == null || text is! String || text.trim().isEmpty) {
+              continue;
+            }
+
+            if (at.isAfter(now)) {
+              if (upcomingReveal == null || at.isBefore(upcomingReveal)) {
+                upcomingReveal = at;
+              }
+              continue;
+            }
+
+            if (MessageReadStatus.isUnread(message, now: now)) {
+              unreadMessages++;
+            }
+
+            // Pick the newest visible message by reveal time, not by
+            // the time its document was created.
+            if (latestAt == null || !at.isBefore(latestAt)) {
+              latest = message;
+              latestAt = at;
+            }
+          }
         }
+        _scheduleReveal(upcomingReveal);
+
         final lastText = latest?['text'] as String?;
         final sender = latest?['sender'] as String?;
-        final createdAt = latest?['createdAt'];
+        final receipt = sender != 'player'
+            ? null
+            : latest?['readAt'] is Timestamp
+            ? OrbitMessageReceipt.read
+            : latest?['deliveredAt'] is Timestamp
+            ? OrbitMessageReceipt.delivered
+            : OrbitMessageReceipt.sent;
 
         String preview = widget.match.preview;
         String time = widget.match.timeLabel;
@@ -396,24 +468,34 @@ class _MatchConversationTileState extends State<_MatchConversationTile> {
               ? 'You: ${lastText.trim()}'
               : lastText.trim();
         }
-        if (createdAt is Timestamp) {
-          time = _formatMessageTime(createdAt.toDate());
+        if (latestAt != null) {
+          time = _formatMessageTime(latestAt);
         }
         if (widget.match.isEnded) preview = 'Ended · $preview';
 
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _matchDetailStream,
           builder: (context, detailSnapshot) {
-            final avatarIndex = OrbitAvatar.indexFromMatchData(
-              detailSnapshot.data?.data(),
-            );
+            final detail = detailSnapshot.data?.data();
+            final avatarIndex = OrbitAvatar.indexFromMatchData(detail);
+            final firstMessage = detail?['firstMessage'];
+            final firstUnread = detail == null
+                ? widget.match.unread
+                : detail['npcStarts'] == true &&
+                      detail['opened'] != true &&
+                      firstMessage is String &&
+                      firstMessage.trim().isNotEmpty;
+            final unreadCount = widget.match.isEnded
+                ? 0
+                : unreadMessages + (firstUnread ? 1 : 0);
 
             return OrbitChatTile(
               name: widget.match.name,
               message: preview,
               time: time,
               avatarIndex: avatarIndex,
-              unreadCount: widget.match.unread ? 1 : 0,
+              unreadCount: unreadCount,
+              receipt: receipt,
               isFavorite: widget.isFavorite,
               onToggleFavorite: widget.onToggleFavorite,
               onTap: widget.onTap,

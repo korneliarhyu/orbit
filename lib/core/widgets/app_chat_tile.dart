@@ -5,6 +5,8 @@ import '../theme/app_text_styles.dart';
 import '../constants/app_spacing.dart';
 import 'app_avatar.dart';
 
+enum OrbitMessageReceipt { sent, delivered, read }
+
 class OrbitChatTile extends StatelessWidget {
   const OrbitChatTile({
     super.key,
@@ -12,6 +14,7 @@ class OrbitChatTile extends StatelessWidget {
     required this.message,
     required this.time,
     this.unreadCount = 0,
+    this.receipt,
     this.isOnline = false,
     this.isGroup = false,
     this.avatarColor = AppColors.primary,
@@ -23,6 +26,7 @@ class OrbitChatTile extends StatelessWidget {
 
   final String name, message, time;
   final int unreadCount;
+  final OrbitMessageReceipt? receipt;
   final bool isOnline, isGroup, isFavorite;
   final Color avatarColor;
   final int? avatarIndex;
@@ -119,6 +123,30 @@ class OrbitChatTile extends StatelessWidget {
                               style: AppTextStyles.small.copyWith(
                                 color: AppColors.onPrimary,
                                 fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ] else if (receipt != null) ...[
+                          const SizedBox(width: AppSpacing.sm),
+                          SizedBox(
+                            width: 21,
+                            height: 21,
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: Icon(
+                                receipt == OrbitMessageReceipt.sent
+                                    ? Icons.done_rounded
+                                    : Icons.done_all_rounded,
+                                size: 18,
+                                color: receipt == OrbitMessageReceipt.read
+                                    ? AppColors.primary
+                                    : AppColors.textSecondary,
+                                semanticLabel:
+                                    receipt == OrbitMessageReceipt.read
+                                    ? 'Read by NPC'
+                                    : receipt == OrbitMessageReceipt.delivered
+                                    ? 'Delivered'
+                                    : 'Sent',
                               ),
                             ),
                           ),

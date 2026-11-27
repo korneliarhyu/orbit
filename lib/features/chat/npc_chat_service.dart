@@ -106,4 +106,13 @@ class NpcChatService {
 
     await _functions.httpsCallable('endMatch').call({'npcId': npcId});
   }
+
+  // ====================================================
+  // MARK MESSAGE AS READ
+  // ====================================================
+  Future<void> markMessageAsRead(String npcId, String messageId) async {
+    await messagesRef(npcId)
+        .doc(messageId)
+        .update({'playerReadAt': FieldValue.serverTimestamp()});
+  }
 }
