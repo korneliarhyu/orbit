@@ -42,74 +42,42 @@ const npcArchetypes = <NpcArchetype>[
   NpcArchetype(
     id: 'golden_retriever',
     name: 'Golden Retriever Boy',
-    signature: [
-      NpcTrait.playful,
-      NpcTrait.kind,
-      NpcTrait.romantic,
-    ],
+    signature: [NpcTrait.playful, NpcTrait.kind, NpcTrait.romantic],
   ),
   NpcArchetype(
     id: 'black_cat',
     name: 'Black Cat Boy',
-    signature: [
-      NpcTrait.intellectual,
-      NpcTrait.mysterious,
-      NpcTrait.serious,
-    ],
+    signature: [NpcTrait.intellectual, NpcTrait.mysterious, NpcTrait.serious],
   ),
   NpcArchetype(
     id: 'sunshine',
     name: 'Sunshine Boy',
-    signature: [
-      NpcTrait.playful,
-      NpcTrait.adventurous,
-      NpcTrait.kind,
-    ],
+    signature: [NpcTrait.playful, NpcTrait.adventurous, NpcTrait.kind],
   ),
   NpcArchetype(
     id: 'lover',
     name: 'Lover Boy',
-    signature: [
-      NpcTrait.romantic,
-      NpcTrait.kind,
-      NpcTrait.openMinded,
-    ],
+    signature: [NpcTrait.romantic, NpcTrait.kind, NpcTrait.openMinded],
   ),
   NpcArchetype(
     id: 'quiet_genius',
     name: 'Quiet Genius',
-    signature: [
-      NpcTrait.intellectual,
-      NpcTrait.witty,
-      NpcTrait.serious,
-    ],
+    signature: [NpcTrait.intellectual, NpcTrait.witty, NpcTrait.serious],
   ),
   NpcArchetype(
     id: 'wildcard',
     name: 'Wildcard Boy',
-    signature: [
-      NpcTrait.adventurous,
-      NpcTrait.openMinded,
-      NpcTrait.mysterious,
-    ],
+    signature: [NpcTrait.adventurous, NpcTrait.openMinded, NpcTrait.mysterious],
   ),
   NpcArchetype(
     id: 'charming_tease',
     name: 'Charming Tease',
-    signature: [
-      NpcTrait.witty,
-      NpcTrait.playful,
-      NpcTrait.romantic,
-    ],
+    signature: [NpcTrait.witty, NpcTrait.playful, NpcTrait.romantic],
   ),
   NpcArchetype(
     id: 'gentle_soul',
     name: 'Gentle Soul',
-    signature: [
-      NpcTrait.kind,
-      NpcTrait.openMinded,
-      NpcTrait.serious,
-    ],
+    signature: [NpcTrait.kind, NpcTrait.openMinded, NpcTrait.serious],
   ),
 ];
 
@@ -142,10 +110,22 @@ class NpcGenerator {
   int _counter = 0;
 
   static const _names = [
-    'Kael', 'Aiden', 'Ren', 'Zayne',
-    'Lucien', 'Orion', 'Elian', 'Kairo',
-    'Riven', 'Noah', 'Atlas', 'Ash',
-    'Soren', 'Cyrus', 'Niko', 'Levi',
+    'Kael',
+    'Aiden',
+    'Ren',
+    'Zayne',
+    'Lucien',
+    'Orion',
+    'Elian',
+    'Kairo',
+    'Riven',
+    'Noah',
+    'Atlas',
+    'Ash',
+    'Soren',
+    'Cyrus',
+    'Niko',
+    'Levi',
   ];
 
   static const _species = [
@@ -162,9 +142,7 @@ class NpcGenerator {
     var bestScore = -1;
 
     for (final archetype in npcArchetypes) {
-      final score = archetype.signature
-          .where(traits.contains)
-          .length;
+      final score = archetype.signature.where(traits.contains).length;
 
       if (score > bestScore) {
         bestScore = score;
@@ -174,7 +152,6 @@ class NpcGenerator {
 
     return best;
   }
-
 
   static const Map<String, List<String>> _archetypeBios = {
     'golden_retriever': [
@@ -250,10 +227,7 @@ class NpcGenerator {
     ],
   };
 
-  String _generateBio(
-      NpcArchetype archetype,
-      List<NpcTrait> traits,
-      ) {
+  String _generateBio(NpcArchetype archetype, List<NpcTrait> traits) {
     final intros = _archetypeBios[archetype.id]!;
     final intro = intros[_random.nextInt(intros.length)];
 
@@ -265,17 +239,13 @@ class NpcGenerator {
   }
 
   NpcPersona generate() {
-    final traits = List<NpcTrait>.of(NpcTrait.values)
-      ..shuffle(_random);
+    final traits = List<NpcTrait>.of(NpcTrait.values)..shuffle(_random);
 
     // Each NPC has 2-3 unique personality tags.
-    final selected = traits
-        .take(2 + _random.nextInt(2))
-        .toList();
+    final selected = traits.take(2 + _random.nextInt(2)).toList();
 
     final archetype = _classify(selected);
     final bio = _generateBio(archetype, selected);
-
 
     return NpcPersona(
       id: 'npc_${DateTime.now().microsecondsSinceEpoch}_${_counter++}',

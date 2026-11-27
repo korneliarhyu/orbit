@@ -1,93 +1,193 @@
-// --------------------------------------------------------
-// 1. IMPORTS & DEPENDENCIES
-// --------------------------------------------------------
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/services/ai_service.dart';
-import 'chat_storage.dart';
+import '../../core/services/active_conversation_tracker.dart';
+import '../../core/utils/message_visibility.dart';
+import '../../core/utils/message_read_status.dart';
+import '../discover/match_service.dart';
 import 'npc_chat_service.dart';
+import '../npc/npc_avatar_widget.dart';
 
-// --------------------------------------------------------
-// 2. CHAT SCREEN: MIKA & MATCHED NPC INPUTS
-// --------------------------------------------------------
-/// One chat UI for the legacy Mika flow and Firestore NPC matches.
-/// Existing usage: ChatScreen(characterName: 'Mika')
-/// New NPC usage: ChatScreen(npcId: npc.id)
+// ======================================================
+// ORBIT - LUNAR LAVENDER CHAT SCREEN
+// ======================================================
 class ChatScreen extends StatefulWidget {
-  final String? characterName;
-  final String? npcId;
+  final String npcId;
 
-  const ChatScreen({
-    super.key,
-    this.characterName,
-    this.npcId,
-  }) : assert(
-  (characterName == null) != (npcId == null),
-  'Provide either characterName or npcId, not both.',
-  );
+  const ChatScreen({super.key, required this.npcId});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-// --------------------------------------------------------
-// 3. CHAT STATE: CONTROLLERS, STREAMS & TIMERS
-// --------------------------------------------------------
-class _ChatScreenState extends State<ChatScreen> {
+// ======================================================
+// CHAT SCREEN STATE
+// ======================================================
+
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final TextEditingController _controller = TextEditingController();
+
   final ScrollController _scrollController = ScrollController();
-  final ChatStore _legacyStore = ChatStore.instance;
 
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _matchStream;
+
   Stream<QuerySnapshot<Map<String, dynamic>>>? _messagesStream;
+
   bool _sending = false;
-  bool _npcTyping = false;
+
   int _previousMessageCount = -1;
 
-  Timer? _replyDebounce;
+  StreamSubscription<NpcReplyFailure>? _replyFailureSubscription;
   Timer? _revealTimer;
+
   DateTime? _nextReveal;
-  String? _pendingMessageId;
-  String? _awaitingReplyToMessageId;
-  bool _replyRunning = false;
+  static const _typingWindow = Duration(seconds: 3);
 
-  bool get _isNpc => widget.npcId != null;
+  final _readWrites = <String>{};
+  final _markedRead = <String>{};
+  String? _readOwnerUid;
+  bool _openingMatch = false;
+  bool _openedMatch = false;
 
-// --------------------------------------------------------
-// 4. INITIALIZE MIKA LISTENER OR NPC FIRESTORE STREAMS
-// --------------------------------------------------------
+  final _ai = AiService.instance;
+
+  // ====================================================
+  // INITIALIZATION
+  // ====================================================
   @override
   void initState() {
     super.initState();
+    _readOwnerUid = FirebaseAuth.instance.currentUser?.uid;
+    WidgetsBinding.instance.addObserver(this);
 
-    if (_isNpc) {
-      final service = NpcChatService.instance;
-      _matchStream = service.watchMatch(widget.npcId!);
-      _messagesStream = service.watchMessages(widget.npcId!);
-    } else {
-      _legacyStore.addListener(_onLegacyChatUpdated);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _legacyStore.openChat(widget.characterName!);
-        _scrollToBottom(jump: true);
-      });
+    final service = NpcChatService.instance;
+
+    _matchStream = service.watchMatch(widget.npcId);
+    _messagesStream = service.watchMessages(widget.npcId);
+    _ai.addListener(_onReplyStateChanged);
+    _replyFailureSubscription = _ai.failures.listen(_onReplyFailure);
+  }
+
+  void _onReplyStateChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onReplyFailure(NpcReplyFailure failure) {
+    if (failure.uid != _readOwnerUid ||
+        failure.npcId != widget.npcId ||
+        !_canMarkRead) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'NPC reply failed; messages were saved: ${failure.error}',
+        ),
+      ),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    ActiveConversationTracker.instance.register(
+      owner: this,
+      npcId: widget.npcId,
+      route: ModalRoute.of(context),
+    );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (mounted && state == AppLifecycleState.resumed) {
+      setState(() {});
     }
   }
 
-  // --------------------------------------------------------
-  // 5. SCROLL HANDLING
-  // --------------------------------------------------------
-  void _onLegacyChatUpdated() => _scrollToBottom();
+  bool get _canMarkRead {
+    if (!mounted ||
+        _readOwnerUid == null ||
+        FirebaseAuth.instance.currentUser?.uid != _readOwnerUid) {
+      return false;
+    }
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return (lifecycle == null || lifecycle == AppLifecycleState.resumed) &&
+        ModalRoute.of(context)?.isCurrent == true &&
+        ActiveConversationTracker.instance.isActive(widget.npcId);
+  }
 
+  // Run only after the visible conversation has been built.
+  void _queueReadTracking(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> documents, {
+    required bool markFirstMessage,
+  }) {
+    final now = DateTime.now();
+    final unread = documents
+        .where(
+          (doc) =>
+              !doc.metadata.hasPendingWrites &&
+              !_readWrites.contains(doc.id) &&
+              !_markedRead.contains(doc.id) &&
+              MessageReadStatus.isUnread(doc.data(), now: now),
+        )
+        .toList();
+    if (unread.isEmpty && (!markFirstMessage || _openingMatch || _openedMatch))
+      return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_canMarkRead) return;
+      if (markFirstMessage && !_openingMatch && !_openedMatch) {
+        unawaited(_markFirstMessageRead());
+      }
+      for (final doc in unread) {
+        if (!_canMarkRead) break;
+        if (_markedRead.contains(doc.id) || !_readWrites.add(doc.id)) continue;
+        unawaited(_markNpcMessageRead(doc.id));
+      }
+    });
+  }
+
+  Future<void> _markNpcMessageRead(String messageId) async {
+    try {
+      await NpcChatService.instance.markMessageAsRead(widget.npcId, messageId);
+      _markedRead.add(messageId);
+    } catch (error) {
+      debugPrint('ORBIT mark message read: $error');
+    } finally {
+      _readWrites.remove(messageId);
+    }
+  }
+
+  Future<void> _markFirstMessageRead() async {
+    _openingMatch = true;
+    try {
+      await MatchService.instance.markOpened(widget.npcId);
+      _openedMatch = true;
+    } catch (error) {
+      debugPrint('ORBIT mark first message read: $error');
+    } finally {
+      _openingMatch = false;
+    }
+  }
+
+  // ====================================================
+  // SCROLL HANDLING
+  // ====================================================
   void _scrollToBottom({bool jump = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+
       final target = _scrollController.position.maxScrollExtent;
+
       if (jump) {
         _scrollController.jumpTo(target);
       } else {
@@ -100,267 +200,236 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  // --------------------------------------------------------
-  // 6. SEND PLAYER BUBBLES & START 2-SECOND DEBOUNCE
-  // --------------------------------------------------------
-  // Save every user bubble immediately; do not call OpenAI yet.
+  // ====================================================
+  // SEND PLAYER MESSAGE
+  // ====================================================
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _sending) return;
 
-    if (!_isNpc) {
-      _controller.clear();
-      setState(() {});
-      _legacyStore.sendMessage(widget.characterName!, text);
+    if (text.isEmpty || _sending) return;
+    final ownerUid = FirebaseAuth.instance.currentUser?.uid;
+    if (ownerUid == null || ownerUid != _readOwnerUid) return;
+    final npcId = widget.npcId;
+
+    // Firestore NPC chat
+    setState(() => _sending = true);
+
+    try {
+      final messageId = await NpcChatService.instance.sendPlayerMessage(
+        npcId: npcId,
+        text: text,
+      );
+
+      // Schedule even if the player left while the send was in flight.
+      _ai.queueReply(ownerUid: ownerUid, npcId: npcId, messageId: messageId);
+
+      if (!mounted) return;
+
+      if (_controller.text.trim() == text) {
+        _controller.clear();
+      }
+
       _scrollToBottom();
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Message not sent: $error')));
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+      }
+    }
+  }
+
+  // ====================================================
+  // UNMATCH NPC
+  // ====================================================
+  Future<void> _confirmUnmatch() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: const Text(
+            'End this connection?',
+            style: TextStyle(color: AppColors.textPrimary),
+          ),
+          content: const Text(
+            'This conversation will end. '
+            'You can still read the chat history.',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('Keep chatting'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('Unmatch'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) {
       return;
     }
 
-    setState(() => _sending = true);
     try {
-      final messageId = await NpcChatService.instance.sendPlayerMessage(
-        npcId: widget.npcId!,
-        text: text,
-      );
-      if (!mounted) return;
-      if (_controller.text.trim() == text) _controller.clear();
+      await NpcChatService.instance.endMatch(widget.npcId);
 
-      setState(() {
-        _pendingMessageId = messageId;
-        _awaitingReplyToMessageId = messageId;
-        _npcTyping = true;
-      });
-
-      _replyDebounce?.cancel();
-      _replyDebounce = Timer(
-        const Duration(seconds: 2),
-        _flushNpcReply,
-      );
-      _scrollToBottom();
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Message not sent: $error')),
-      );
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  // --------------------------------------------------------
-  // 7. FLUSH BATCH: CALL AI ONCE & HANDLE BUSY STATE
-  // --------------------------------------------------------
-  // One callable request for the latest burst of user bubbles.
-  Future<void> _flushNpcReply() async {
-    if (!mounted || _replyRunning || _pendingMessageId == null) return;
-
-    final messageId = _pendingMessageId!;
-    _pendingMessageId = null;
-    _replyRunning = true;
-    setState(() => _npcTyping = true);
-    var busy = false;
-
-    try {
-      final accepted = await AiService.instance.replyAsNpc(
-        npcId: widget.npcId!,
-        messageId: messageId,
-      );
-      if (!accepted) {
-        busy = true;
-        _pendingMessageId ??= messageId;
+      final ownerUid = _readOwnerUid;
+      if (ownerUid != null) {
+        _ai.cancelQueuedReply(ownerUid: ownerUid, npcId: widget.npcId);
       }
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('NPC reply failed; messages were saved: $error')),
-      );
-    } finally {
-      _replyRunning = false;
-      if (mounted) setState(() => _npcTyping = false);
-
-      // Messages sent while the AI was generating belong to the next batch.
-      if (mounted && _pendingMessageId != null) {
-        _replyDebounce?.cancel();
-        _replyDebounce = Timer(
-          busy
-              ? const Duration(seconds: 2)
-              : const Duration(milliseconds: 1800),
-          _flushNpcReply,
-        );
-      }
-    }
-  }
-
-  // --------------------------------------------------------
-  // UNMATCH CHAT FROM NPC TO PLAYER
-  // --------------------------------------------------------
-  Future<void> _confirmUnmatch() async {
-    if (!_isNpc) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('End this connection?'),
-        content: const Text(
-          'This conversation will end. You can still read the chat history.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Keep chatting'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Unmatch'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    try {
-      await NpcChatService.instance.endMatch(widget.npcId!);
-
-      _replyDebounce?.cancel();
-      _pendingMessageId = null;
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Connection ended.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Connection ended.')));
     } catch (error) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not end match: $error')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not end match: $error')));
     }
   }
 
-  // --------------------------------------------------------
-  // 8. SCHEDULE TIMED REVEAL FOR NPC BUBBLES
-  // --------------------------------------------------------
-  // Display stored NPC bubbles gradually (without additional AI requests).
+  // ====================================================
+  // SCHEDULE NPC MESSAGE REVEAL
+  // ====================================================
   void _scheduleReveal(DateTime? revealAt) {
     if (_nextReveal == revealAt) return;
+
     _revealTimer?.cancel();
     _nextReveal = revealAt;
+
     if (revealAt == null) return;
 
     final delay = revealAt.difference(DateTime.now());
+
     _revealTimer = Timer(
-      delay.isNegative ? Duration.zero : delay + const Duration(milliseconds: 30),
-          () {
+      delay.isNegative
+          ? Duration.zero
+          : delay + const Duration(milliseconds: 30),
+      () {
         _nextReveal = null;
-        if (mounted) setState(() {});
+
+        if (mounted) {
+          setState(() {});
+        }
       },
     );
   }
 
-  // --------------------------------------------------------
-  // 9. CLEAN UP TIMERS, LISTENERS & CONTROLLERS
-  // --------------------------------------------------------
+  // ====================================================
+  // DISPOSE
+  // ====================================================
   @override
   void dispose() {
-    _replyDebounce?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    ActiveConversationTracker.instance.unregister(this);
+
+    _ai.removeListener(_onReplyStateChanged);
+    unawaited(_replyFailureSubscription?.cancel());
     _revealTimer?.cancel();
-    if (!_isNpc) {
-      _legacyStore.removeListener(_onLegacyChatUpdated);
-      _legacyStore.closeChat(widget.characterName!);
-    }
+
     _controller.dispose();
     _scrollController.dispose();
+
     super.dispose();
   }
 
-  // --------------------------------------------------------
-  // 10. CHAT PAGE SCAFFOLD & COSMIC BACKGROUND
-  // --------------------------------------------------------
+  // ====================================================
+  // MAIN SCREEN
+  // ====================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: _isNpc
-            ? _buildNpcRoom()
-            : _buildLegacyRoom(),
+      backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: true,
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0.8, 0.12),
+            radius: 1.25,
+            colors: [Color(0xFF211A2B), AppColors.background],
+          ),
+        ),
+        child: SafeArea(child: _buildNpcRoom()),
       ),
     );
   }
 
-  // --------------------------------------------------------
-  // 11. LEGACY MIKA CONVERSATION
-  // --------------------------------------------------------
-  Widget _buildLegacyRoom() {
-    final name = widget.characterName!;
-    return _roomLayout(
-      name: name,
-      subtitle: 'AI Character · Demo',
-      content: AnimatedBuilder(
-        animation: _legacyStore,
-        builder: (_, _) {
-          final messages = _legacyStore.messagesFor(name);
-          final typing = _legacyStore.isTyping(name);
-          final entries = messages
-              .map((msg) => _ChatEntry(
-            text: msg.text,
-            isMine: msg.isMine,
-            at: msg.sentAt,
-          ))
-              .toList();
-          return _messageList(
-            entries,
-            typingName: typing ? name : null,
-          );
-        },
-      ),
-    );
-  }
-
-  // --------------------------------------------------------
-  // 12. NPC ROOM: LIVE PROFILE, AGE, CAREER & INTIMACY
-  // --------------------------------------------------------
+  // ====================================================
+  // NPC FIRESTORE ROOM
+  // ====================================================
   Widget _buildNpcRoom() {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: _matchStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return _status('Cannot load this match. Check your connection.');
-        }
-        if (!snapshot.hasData) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppColors.primaryPink),
+          return _status(
+            'Cannot load this match. '
+            'Check your connection.',
           );
         }
+
+        if (!snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          );
+        }
+
         final document = snapshot.data!;
+
         if (!document.exists) {
           return _status('Match not found.');
         }
 
         final npc = document.data()!;
+
         final name = npc['name'] as String? ?? 'Traveler';
+
         final age = (npc['age'] as num?)?.toInt();
+
         final career = (npc['career'] as String?)?.trim();
+
+        final species = (npc['species'] as String?)?.trim();
+
+        final avatarIndex = (npc['avatarIndex'] as num?)?.toInt() ?? 0;
+
+        final displayName = age == null ? name : '$name, $age';
+
         final subtitle = [
-          if (age != null) '$age',
           if (career != null && career.isNotEmpty) career,
-        ].join(' • ');
+          if (species != null && species.isNotEmpty) species,
+        ].join(' · ');
 
         final intimacy = npc['intimacy'];
+
         final rawScore = intimacy is Map ? intimacy['score'] : null;
+
         final score = rawScore is num
             ? rawScore.toDouble().clamp(0.0, 100.0).toDouble()
             : 0.0;
 
         final status = npc['relationshipStatus'] as String? ?? 'active';
+
         final ended = status != 'active';
 
         return _roomLayout(
-          name: name,
+          name: displayName,
           subtitle: subtitle,
-          intimacyScore: score,
+          avatarIndex: avatarIndex,
+          intimacyLabel: _resolveIntimacyLabel(score),
           ended: ended,
           endedByNpc: status == 'unmatched_npc',
           content: _buildNpcMessages(npc, ended: ended),
@@ -369,14 +438,15 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // --------------------------------------------------------
-  // 13. SHARED LAYOUT: HEADER, MESSAGES & INPUT
-  // --------------------------------------------------------
+  // ====================================================
+  // SHARED CHAT ROOM LAYOUT
+  // ====================================================
   Widget _roomLayout({
     required String name,
     required String subtitle,
     required Widget content,
-    double? intimacyScore,
+    int? avatarIndex,
+    String? intimacyLabel,
     bool ended = false,
     bool endedByNpc = false,
   }) {
@@ -385,22 +455,21 @@ class _ChatScreenState extends State<ChatScreen> {
         _buildHeader(
           name,
           subtitle,
-          intimacyScore: intimacyScore,
+          avatarIndex: avatarIndex,
+          intimacyLabel: intimacyLabel,
           ended: ended,
         ),
+
         Expanded(child: content),
-        if (ended)
-          _endedChatBanner(endedByNpc)
-        else
-          _buildInput(name),
+
+        if (ended) _endedChatBanner(endedByNpc) else _buildInput(name),
       ],
     );
   }
 
-  // --------------------------------------------------------
-  // 14. EMPTY, LOADING & ERROR STATUS
-  // --------------------------------------------------------
-
+  // ====================================================
+  // STATUS MESSAGE
+  // ====================================================
   Widget _status(String message) {
     return Center(
       child: Padding(
@@ -408,157 +477,195 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Text(
           message,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: AppColors.softLilac),
+          style: const TextStyle(color: AppColors.textSecondary),
         ),
       ),
     );
   }
 
-  // --------------------------------------------------------
-  // 15. CHAT HEADER & INTIMACY PROGRESS BAR
-  // --------------------------------------------------------
+  // ====================================================
+  // NPC'S LABEL
+  // ====================================================
+  String _resolveIntimacyLabel(double score) {
+    if (score >= 80) return 'Deep Bond';
+    if (score >= 60) return 'Close';
+    if (score >= 40) return 'Comfortable';
+    if (score >= 20) return 'Getting Closer';
 
+    return 'Strangers';
+  }
 
-  Widget _buildHeader(
-      String name,
-      String subtitle, {
-        double? intimacyScore,
-        bool ended = false,
-  }) {
-    final score = intimacyScore;
-    final stage = score == null
-        ? null
-        : score >= 80
-        ? 'Deep Bond'
-        : score >= 60
-        ? 'Close'
-        : score >= 40
-        ? 'Comfortable'
-        : score >= 20
-        ? 'Getting Closer'
-        : 'Strangers';
+  void _openCharacterProfile() {
+    _showComingSoon('Character profile');
+  }
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 10, 16, 12),
-      decoration: const BoxDecoration(
-        color: Color(0xE8151024),
-        border: Border(bottom: BorderSide(color: AppColors.border)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              IconButton(
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(
-                  Icons.arrow_back_ios_new,
-                  size: 19,
-                  color: AppColors.textPrimary,
+  Widget _intimacyBadge(String label) {
+    const lilac = Color(0xFFD8B9EE);
+    return Semantics(
+      label: 'Intimacy: $label',
+      excludeSemantics: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF30253D),
+          border: Border.all(color: const Color(0xFF594469), width: 0.7),
+          borderRadius: BorderRadius.circular(30),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.favorite_border_rounded, color: lilac, size: 12),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: lilac,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  height: 1.15,
                 ),
-              ),
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: AppColors.primaryPurple,
-                child: Text(
-                  name.isEmpty ? '?' : name[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 19,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.softLilac,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // UNMATCH BUTTON
-              if (_isNpc && !ended)
-                IconButton(
-                  tooltip: 'Unmatch',
-                  onPressed: _confirmUnmatch,
-                  icon: const Icon(
-                    Icons.heart_broken_outlined,
-                    color: AppColors.softLilac,
-                  ),
-                ),
-
-              const Icon(
-                Icons.auto_awesome,
-                color: AppColors.primaryPink,
-              ),
-            ],
-          ),
-          if (score != null) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.favorite_rounded,
-                        color: AppColors.primaryPink,
-                        size: 14,
-                      ),
-                      const SizedBox(width: 7),
-                      Text(
-                        '$stage · Intimacy ${score.toInt()}/100',
-                        style: const TextStyle(
-                          color: AppColors.softLilac,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 7),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(99),
-                    child: LinearProgressIndicator(
-                      minHeight: 5,
-                      value: score / 100,
-                      color: AppColors.primaryPink,
-                      backgroundColor: AppColors.border,
-                    ),
-                  ),
-                ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(
+    String name,
+    String subtitle, {
+    int? avatarIndex,
+    String? intimacyLabel,
+    bool ended = false,
+  }) {
+    final hasPilotCareer = subtitle.toLowerCase().contains('pilot');
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(4, 7, 8, 8),
+      decoration: const BoxDecoration(
+        color: AppColors.background,
+        border: Border(bottom: BorderSide(color: AppColors.border, width: 0.6)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'Back',
+            onPressed: () => Navigator.maybePop(context),
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: AppColors.textPrimary,
+              size: 19,
+            ),
+          ),
+          // Avatar + name open the same future character profile.
+          Expanded(
+            child: Material(
+              color: Colors.transparent,
+              child: Tooltip(
+                message: 'View character profile',
+                child: InkWell(
+                  onTap: _openCharacterProfile,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        _ChatAvatar(
+                          name: name,
+                          avatarIndex: avatarIndex,
+                          size: 50,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Row(
+                                children: [
+                                  Icon(
+                                    ended
+                                        ? Icons.link_off_rounded
+                                        : hasPilotCareer
+                                        ? Icons.flight_takeoff_rounded
+                                        : Icons.public_rounded,
+                                    color: AppColors.primary,
+                                    size: 13,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Expanded(
+                                    child: Text(
+                                      ended
+                                          ? 'Connection ended'
+                                          : subtitle.isNotEmpty
+                                          ? subtitle
+                                          : 'AI Companion',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (intimacyLabel != null && !ended) ...[
+                                const SizedBox(height: 5),
+                                _intimacyBadge(intimacyLabel),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          if (!ended)
+            IconButton(
+              tooltip: 'Unmatch',
+              onPressed: _confirmUnmatch,
+              icon: const Icon(
+                Icons.link_off_rounded,
+                color: AppColors.textSecondary,
+                size: 23,
+              ),
+            )
+          else
+            const SizedBox(width: 48),
         ],
       ),
     );
   }
 
-  // --------------------------------------------------------
-  // 16. WATCH MESSAGE HISTORY & HIDE FUTURE NPC BUBBLES
-  // --------------------------------------------------------
+  void _showComingSoon(String feature) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$feature coming soon in ORBIT.')));
+  }
+
+  // ====================================================
+  // WATCH NPC MESSAGES
+  // ====================================================
   Widget _buildNpcMessages(Map<String, dynamic> npc, {required bool ended}) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _messagesStream,
@@ -566,35 +673,44 @@ class _ChatScreenState extends State<ChatScreen> {
         if (snapshot.hasError) {
           return _status('Could not load messages.');
         }
+
         if (!snapshot.hasData) {
           return const Center(
-            child: CircularProgressIndicator(color: AppColors.primaryPink),
+            child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
+
         final documents = snapshot.data!.docs;
         final entries = <_ChatEntry>[];
 
-        // --------------------------------------------------------
-        // 1. ADD INITIAL MATCH MESSAGE
-        // --------------------------------------------------------
+        // Initial match message
         final first = npc['firstMessage'] as String?;
+
         if (npc['npcStarts'] == true && first != null && first.isNotEmpty) {
           final matchedAt = npc['matchedAt'];
-          entries.add(_ChatEntry(
-            text: first,
-            isMine: false,
-            at: matchedAt is Timestamp ? matchedAt.toDate() : null,
-          ));
+
+          entries.add(
+            _ChatEntry(
+              text: first,
+              isMine: false,
+              at: matchedAt is Timestamp ? matchedAt.toDate() : null,
+            ),
+          );
         }
 
-        // --------------------------------------------------------
-        // 2. FIND THE BATCH FOR THE LATEST PLAYER MESSAGE
-        // --------------------------------------------------------
+        // Find current reply batch and read status.
         String? awaitingBatchId;
-        if (_awaitingReplyToMessageId != null) {
+        bool awaitingMessageRead = false;
+
+        final awaitingReplyToMessageId = _ai.activeMessageId(widget.npcId);
+        if (awaitingReplyToMessageId != null) {
           for (final doc in documents) {
-            if (doc.id == _awaitingReplyToMessageId) {
-              final batchId = doc.data()['replyBatchId'];
+            if (doc.id == awaitingReplyToMessageId) {
+              final data = doc.data();
+
+              awaitingMessageRead = data['readAt'] is Timestamp;
+
+              final batchId = data['replyBatchId'];
 
               if (batchId is String &&
                   batchId.isNotEmpty &&
@@ -607,277 +723,534 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         }
 
-        // --------------------------------------------------------
-        // 3. BUILD VISIBLE MESSAGE HISTORY
-        // --------------------------------------------------------
         DateTime? upcomingReveal;
+        DateTime? upcomingNpcReveal;
         bool hasVisibleReply = false;
-        final now = DateTime.now();
-        for (final doc in snapshot.data!.docs) {
-          final message = doc.data();
-          final displayAt = message['displayAt'];
 
-          // Hide NPC bubbles scheduled for a later reveal.
-          if (displayAt is Timestamp) {
-            final showAt = displayAt.toDate();
-            if (showAt.isAfter(now)) {
-              if (upcomingReveal == null || showAt.isBefore(upcomingReveal)) {
-                upcomingReveal = showAt;
-              }
-              continue;
+        final now = DateTime.now();
+
+        // Apply the same reveal-time rules as Inbox.
+        for (final doc in documents) {
+          final message = doc.data();
+          final at = MessageVisibility.revealAt(message);
+          if (at == null) continue;
+
+          if (at.isAfter(now)) {
+            if (upcomingReveal == null || at.isBefore(upcomingReveal)) {
+              upcomingReveal = at;
             }
+            if (message['sender'] == 'npc' &&
+                (upcomingNpcReveal == null || at.isBefore(upcomingNpcReveal))) {
+              upcomingNpcReveal = at;
+            }
+            continue;
           }
 
-          // Check whether the current player batch
-          // already has a visible NPC response.
           if (awaitingBatchId != null &&
               message['sender'] == 'npc' &&
               message['inReplyTo'] == awaitingBatchId) {
             hasVisibleReply = true;
           }
 
-          final createdAt = message['createdAt'];
-          entries.add(_ChatEntry(
-            text: message['text'] as String? ?? '',
-            isMine: message['sender'] == 'player',
-            at: createdAt is Timestamp ? createdAt.toDate() : null,
-          ));
+          entries.add(
+            _ChatEntry(
+              text: message['text'] as String? ?? '',
+              isMine: message['sender'] == 'player',
+              at: at,
+              deliveryStatus: _resolveDeliveryStatus(message),
+            ),
+          );
         }
 
-        // --------------------------------------------------------
-        // 4. SCHEDULE NEXT NPC BUBBLE REVEAL
-        // --------------------------------------------------------
-        _scheduleReveal(upcomingReveal);
+        // A message created earlier can be revealed after a newer message.
+        // Sort by visible time, preserving the original order for ties.
+        final chronological = entries.indexed.toList()
+          ..sort((a, b) {
+            final aTime = a.$2.at;
+            final bTime = b.$2.at;
+            final order = aTime == null
+                ? (bTime == null ? 0 : -1)
+                : (bTime == null ? 1 : aTime.compareTo(bTime));
+            return order == 0 ? a.$1.compareTo(b.$1) : order;
+          });
+        final visibleEntries = chronological.map((item) => item.$2).toList();
 
-        // --------------------------------------------------------
-        // 5. AUTO-SCROLL WHEN MESSAGE COUNT CHANGES
-        // --------------------------------------------------------
-        if (_previousMessageCount != entries.length) {
-          _previousMessageCount = entries.length;
+        // Wake up both when typing should start and when a message is due.
+        final typingAt = upcomingNpcReveal?.subtract(_typingWindow);
+        final scheduledTyping = typingAt != null && !typingAt.isAfter(now);
+        var nextRefresh = upcomingReveal;
+        if (!ended &&
+            typingAt != null &&
+            typingAt.isAfter(now) &&
+            (nextRefresh == null || typingAt.isBefore(nextRefresh))) {
+          nextRefresh = typingAt;
+        }
+        _scheduleReveal(nextRefresh);
+
+        // Preserve normal AI typing while a read message is being processed,
+        // but do not show it throughout a long scheduled delay.
+        final reactiveTyping =
+            upcomingNpcReveal == null &&
+            awaitingReplyToMessageId != null &&
+            awaitingMessageRead &&
+            !hasVisibleReply;
+        final showTyping = !ended && (reactiveTyping || scheduledTyping);
+
+        // Auto-scroll when a message becomes visible.
+        if (_previousMessageCount != visibleEntries.length) {
+          _previousMessageCount = visibleEntries.length;
           _scrollToBottom();
         }
 
-        // --------------------------------------------------------
-        // 6. CONTROL NPC TYPING VISIBILITY
-        // --------------------------------------------------------
-        final showTyping = !ended && ((_npcTyping && !hasVisibleReply) || upcomingReveal != null);
+        _queueReadTracking(
+          documents,
+          markFirstMessage:
+              npc['npcStarts'] == true &&
+              first != null &&
+              first.isNotEmpty &&
+              npc['opened'] != true,
+        );
 
-        // --------------------------------------------------------
-        // 7. RENDER MESSAGES & TYPING INDICATOR
-        // --------------------------------------------------------
         return _messageList(
-            entries,
-            typingName: showTyping
-                ? (npc['name'] as String? ?? 'NPC')
-                : null,
+          visibleEntries,
+          companionName: npc['name'] as String? ?? 'NPC',
+          avatarIndex: (npc['avatarIndex'] as num?)?.toInt() ?? 0,
+          typingName: showTyping ? npc['name'] as String? ?? 'NPC' : null,
         );
       },
     );
   }
 
-  // --------------------------------------------------------
-  // 17. RENDER CONVERSATION LIST & TYPING INDICATOR
-  // --------------------------------------------------------
-
+  // ====================================================
+  // MESSAGE LIST WITH DATE SEPARATORS
+  // ====================================================
   Widget _messageList(
-      List<_ChatEntry> entries, {
-        String? typingName,
-      }) {
+    List<_ChatEntry> entries, {
+    required String companionName,
+    int? avatarIndex,
+    String? typingName,
+  }) {
     if (entries.isEmpty && typingName == null) {
       return _status("It's a match! Say hello 💜");
     }
 
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
-      itemCount: entries.length + 1 + (typingName == null ? 0 : 1),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 24),
+      itemCount: entries.length + (typingName == null ? 0 : 1),
       itemBuilder: (context, index) {
-        if (index == 0) {
-          return Center(
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 24),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-              decoration: BoxDecoration(
-                color: AppColors.cardSoft,
-                borderRadius: BorderRadius.circular(30),
-              ),
-              child: const Text(
-                'YOUR CONVERSATION',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 10,
-                  letterSpacing: 1.2,
-                ),
-              ),
-            ),
-          );
-        }
-        if (index > entries.length) {
-          return _TypingBubble(name: typingName!);
+        if (index == entries.length) {
+          return _TypingBubble(name: typingName!, avatarIndex: avatarIndex);
         }
 
-        return _buildMessageBubble(entries[index - 1]);
+        final entry = entries[index];
+
+        final previous = index == 0 ? null : entries[index - 1];
+
+        final showDate =
+            entry.at != null &&
+            (previous?.at == null || !_sameDay(previous!.at!, entry.at!));
+
+        return Column(
+          children: [
+            if (showDate) _datePill(_dateLabel(entry.at!)),
+
+            _buildMessageBubble(
+              entry,
+              companionName: companionName,
+              avatarIndex: avatarIndex,
+            ),
+          ],
+        );
       },
     );
   }
 
-  // --------------------------------------------------------
-  // 18. MESSAGE BUBBLE: SIZE, STYLE & TIMESTAMP
-  // --------------------------------------------------------
-
-  Widget _buildMessageBubble(_ChatEntry message) {
-    return Align(
-      alignment: message.isMine
-          ? Alignment.centerRight
-          : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * 0.76,
-        ),
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.fromLTRB(14, 12, 12, 8),
-        decoration: BoxDecoration(
-          gradient: message.isMine ? AppColors.primaryGradient : null,
-          color: message.isMine ? null : AppColors.card,
-          border: message.isMine
-              ? null
-              : Border.all(color: AppColors.border),
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(20),
-            topRight: const Radius.circular(20),
-            bottomLeft: Radius.circular(message.isMine ? 20 : 5),
-            bottomRight: Radius.circular(message.isMine ? 5 : 20),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              message.text,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 14,
-                height: 1.4,
-              ),
-            ),
-            if (message.at != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                _formatTime(message.at!),
-                style: TextStyle(
-                  color: message.isMine
-                      ? Colors.white70
-                      : AppColors.textSecondary,
-                  fontSize: 10,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+  // ====================================================
+  // DATE HELPERS
+  // ====================================================
+  bool _sameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  // --------------------------------------------------------
-  // 19. FORMAT CHAT TIMESTAMPS
-  // --------------------------------------------------------
+  String _dateLabel(DateTime date) {
+    final now = DateTime.now();
 
-  String _formatTime(DateTime value) {
-    final hour = value.hour.toString().padLeft(2, '0');
-    final minute = value.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
+    final today = DateTime(now.year, now.month, now.day);
+
+    final day = DateTime(date.year, date.month, date.day);
+
+    if (day == today) {
+      return 'Today';
+    }
+
+    if (day == today.subtract(const Duration(days: 1))) {
+      return 'Yesterday';
+    }
+
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    return '${date.day} '
+        '${months[date.month - 1]} '
+        '${date.year}';
   }
 
-  // --------------------------------------------------------
-  // 20. MESSAGE COMPOSER & SEND BUTTON
-  // --------------------------------------------------------
-
-  Widget _buildInput(String name) {
-    final canSend = _controller.text.trim().isNotEmpty && !_sending;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-      decoration: const BoxDecoration(
-        color: Color(0xF0151024),
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
+  Widget _datePill(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 16),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: AppColors.cardSoft,
-                borderRadius: BorderRadius.circular(26),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: TextField(
-                controller: _controller,
-                enabled: !_sending,
-                minLines: 1,
-                maxLines: 4,
-                inputFormatters: [LengthLimitingTextInputFormatter(1000)],
-                textCapitalization: TextCapitalization.sentences,
-                textInputAction: TextInputAction.send,
-                onChanged: (_) => setState(() {}),
-                onSubmitted: (_) => _sendMessage(),
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 14,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Message $name...',
-                  hintStyle: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 14,
-                  ),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  filled: false,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 13),
-                ),
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSecondary,
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          IconButton.filled(
-            onPressed: canSend ? _sendMessage : null,
-            style: IconButton.styleFrom(
-              backgroundColor: AppColors.primaryPink,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: AppColors.cardSoft,
-              disabledForegroundColor: AppColors.textSecondary,
-              minimumSize: const Size(46, 46),
-            ),
-            icon: const Icon(Icons.arrow_upward_rounded),
           ),
         ],
       ),
     );
   }
+
+  // ====================================================
+  // LUNAR LAVENDER MESSAGE BUBBLES
+  // ====================================================
+  Widget _buildMessageBubble(
+    _ChatEntry message, {
+    required String companionName,
+    int? avatarIndex,
+  }) {
+    final mine = message.isMine;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final maxBubbleWidth = screenWidth * (mine ? 0.76 : 0.68);
+
+    final bubble = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+        decoration: BoxDecoration(
+          color: mine ? const Color(0xFFD0B2D9) : const Color(0xFF302C36),
+          border: mine
+              ? null
+              : Border.all(color: const Color(0xFF5B5264), width: 0.7),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(21),
+            topRight: const Radius.circular(21),
+            bottomLeft: Radius.circular(mine ? 21 : 6),
+            bottomRight: Radius.circular(mine ? 6 : 21),
+          ),
+        ),
+        child: Text(
+          message.text,
+          softWrap: true,
+          style: TextStyle(
+            color: mine ? const Color(0xFF211A2B) : AppColors.textPrimary,
+            fontSize: 15.5,
+            height: 1.4,
+          ),
+        ),
+      ),
+    );
+
+    final metadata = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (message.at != null)
+          Text(
+            _formatTime(message.at!),
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 11,
+            ),
+          ),
+        if (mine) ...[
+          if (message.at != null) const SizedBox(width: 5),
+          Icon(
+            message.deliveryStatus == _MessageDeliveryStatus.sent
+                ? Icons.done_rounded
+                : Icons.done_all_rounded,
+
+            color: message.deliveryStatus == _MessageDeliveryStatus.read
+                ? const Color(0xFFD7B6E5)
+                : const Color(0xFF81778F),
+
+            size: 16,
+          ),
+        ],
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        mainAxisAlignment: mine
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!mine) ...[
+            _ChatAvatar(
+              name: companionName,
+              avatarIndex: avatarIndex,
+              size: 32,
+            ),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Column(
+              crossAxisAlignment: mine
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                bubble,
+                if (message.at != null || mine)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      top: 5,
+                      left: mine ? 0 : 6,
+                      right: mine ? 6 : 0,
+                    ),
+                    child: metadata,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ====================================================
+  // TIME FORMAT
+  // ====================================================
+  String _formatTime(DateTime value) {
+    final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+    final minute = value.minute.toString().padLeft(2, '0');
+    final period = value.hour < 12 ? 'AM' : 'PM';
+
+    return '$hour:$minute $period';
+  }
+
+  // ====================================================
+  // LUNAR LAVENDER MESSAGE INPUT
+  // ====================================================
+  Widget _buildInput(String name) {
+    final canSend = _controller.text.trim().isNotEmpty && !_sending;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 9, 12, 14),
+      decoration: const BoxDecoration(
+        color: AppColors.background,
+        border: Border(top: BorderSide(color: AppColors.border, width: 0.6)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Add attachment
+          _roundAction(
+            icon: Icons.attach_file_rounded,
+            tooltip: 'Attachments coming soon',
+            onTap: () {
+              _showComingSoon('Attachments');
+            },
+          ),
+
+          const SizedBox(width: 9),
+
+          // Message input
+          Expanded(
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 46),
+              padding: const EdgeInsets.only(left: 15, right: 3),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(26),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      enabled: !_sending,
+                      minLines: 1,
+                      maxLines: 4,
+
+                      inputFormatters: [LengthLimitingTextInputFormatter(1000)],
+
+                      textCapitalization: TextCapitalization.sentences,
+
+                      textInputAction: TextInputAction.send,
+
+                      onChanged: (_) {
+                        setState(() {});
+                      },
+
+                      onSubmitted: (_) {
+                        _sendMessage();
+                      },
+
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                      ),
+
+                      decoration: const InputDecoration(
+                        hintText: 'Type a message...',
+                        hintStyle: TextStyle(color: AppColors.textSecondary),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 12),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+
+                  // Emoji button
+                  IconButton(
+                    tooltip: 'Insert heart',
+                    onPressed: _sending
+                        ? null
+                        : () {
+                            final selection = _controller.selection;
+
+                            final text = _controller.text;
+
+                            final start = selection.isValid
+                                ? selection.start
+                                : text.length;
+
+                            final end = selection.isValid
+                                ? selection.end
+                                : text.length;
+
+                            const emoji = '💜';
+
+                            _controller.value = TextEditingValue(
+                              text: text.replaceRange(start, end, emoji),
+                              selection: TextSelection.collapsed(
+                                offset: start + emoji.length,
+                              ),
+                            );
+
+                            setState(() {});
+                          },
+                    icon: const Icon(
+                      Icons.sentiment_satisfied_alt_outlined,
+                      color: AppColors.textSecondary,
+                      size: 21,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 9),
+
+          // Send button
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: canSend ? AppColors.primaryGradient : null,
+              color: canSend ? null : AppColors.elevatedSurface,
+            ),
+            child: IconButton(
+              tooltip: 'Send message',
+              onPressed: canSend ? _sendMessage : null,
+              icon: Icon(
+                Icons.send_rounded,
+                size: 21,
+                color: canSend ? AppColors.onPrimary : AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ====================================================
+  // ROUND ACTION BUTTON
+  // ====================================================
+  Widget _roundAction({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      width: 46,
+      height: 46,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onTap,
+        icon: Icon(icon, color: AppColors.textPrimary, size: 23),
+      ),
+    );
+  }
 }
 
-// --------------------------------------------------------
-// 21. INTERNAL MESSAGE DISPLAY MODEL
-// --------------------------------------------------------
+// ======================================================
+// INTERNAL MESSAGE MODEL
+// ======================================================
+enum _MessageDeliveryStatus { sent, delivered, read }
+
+_MessageDeliveryStatus _resolveDeliveryStatus(Map<String, dynamic> message) {
+  if (message['readAt'] is Timestamp) {
+    return _MessageDeliveryStatus.read;
+  }
+
+  if (message['deliveredAt'] is Timestamp) {
+    return _MessageDeliveryStatus.delivered;
+  }
+
+  return _MessageDeliveryStatus.sent;
+}
 
 class _ChatEntry {
   final String text;
   final bool isMine;
   final DateTime? at;
+  final _MessageDeliveryStatus deliveryStatus;
 
   const _ChatEntry({
     required this.text,
     required this.isMine,
     this.at,
+    this.deliveryStatus = _MessageDeliveryStatus.sent,
   });
 }
 
-// --------------------------------------------------------
-// END CHAT BANNER
-// --------------------------------------------------------
+// ======================================================
+// ENDED CONNECTION BANNER
+// ======================================================
 Widget _endedChatBanner(bool endedByNpc) {
   return Container(
     width: double.infinity,
@@ -885,7 +1258,8 @@ Widget _endedChatBanner(bool endedByNpc) {
     color: AppColors.cardSoft,
     child: Text(
       endedByNpc
-          ? 'This character decided to end the connection.'
+          ? 'This character decided to end '
+                'the connection.'
           : 'You ended this connection.',
       textAlign: TextAlign.center,
       style: const TextStyle(color: AppColors.softLilac),
@@ -893,13 +1267,80 @@ Widget _endedChatBanner(bool endedByNpc) {
   );
 }
 
-// --------------------------------------------------------
-// 22. NPC TYPING BUBBLE: ANIMATED THREE DOTS
-// --------------------------------------------------------
-class _TypingBubble extends StatefulWidget {
-  const _TypingBubble({required this.name});
+// ======================================================
+// COMPANION AVATAR PLACEHOLDER
+// ======================================================
+class _CompanionAvatar extends StatelessWidget {
+  const _CompanionAvatar({required this.name, required this.radius});
 
   final String name;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: AppColors.primaryGradient,
+        border: Border.all(color: AppColors.border, width: 1.2),
+      ),
+      child: Text(
+        name.isEmpty ? '?' : name.substring(0, 1).toUpperCase(),
+        style: TextStyle(
+          color: AppColors.onPrimary,
+          fontWeight: FontWeight.w700,
+          fontSize: radius * 0.80,
+        ),
+      ),
+    );
+  }
+}
+
+// ======================================================
+// NPC AVATAR (uses the shared portrait asset widget)
+// ======================================================
+class _ChatAvatar extends StatelessWidget {
+  const _ChatAvatar({required this.name, required this.size, this.avatarIndex});
+
+  final String name;
+  final double size;
+  final int? avatarIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    if (avatarIndex == null) {
+      return _CompanionAvatar(name: name, radius: size / 2);
+    }
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.border, width: 1.1),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ClipOval(
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: NpcAvatarWidget(avatarIndex: avatarIndex!, width: size),
+        ),
+      ),
+    );
+  }
+}
+
+// ANIMATED NPC TYPING BUBBLE
+// ======================================================
+class _TypingBubble extends StatefulWidget {
+  const _TypingBubble({required this.name, this.avatarIndex});
+
+  final String name;
+  final int? avatarIndex;
 
   @override
   State<_TypingBubble> createState() => _TypingBubbleState();
@@ -912,6 +1353,7 @@ class _TypingBubbleState extends State<_TypingBubble>
   @override
   void initState() {
     super.initState();
+
     _animation = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -926,54 +1368,57 @@ class _TypingBubbleState extends State<_TypingBubble>
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          border: Border.all(color: AppColors.border),
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-            bottomLeft: Radius.circular(5),
-            bottomRight: Radius.circular(20),
-          ),
-        ),
+    return Semantics(
+      label: '${widget.name} is typing',
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(
-              '${widget.name} is typing',
-              style: const TextStyle(
-                color: AppColors.softLilac,
-                fontSize: 12,
-                fontStyle: FontStyle.italic,
-              ),
+            _ChatAvatar(
+              name: widget.name,
+              avatarIndex: widget.avatarIndex,
+              size: 32,
             ),
+
             const SizedBox(width: 8),
-            AnimatedBuilder(
-              animation: _animation,
-              builder: (context, child) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(3, (index) {
-                    final phase = (_animation.value - index * 0.20 + 1) % 1;
-                    final opacity = phase < 0.28 ? 1.0 : 0.30;
-                    return Padding(
-                      padding: EdgeInsets.only(right: index == 2 ? 0 : 4),
-                      child: Opacity(
-                        opacity: opacity,
-                        child: const CircleAvatar(
-                          radius: 2.5,
-                          backgroundColor: AppColors.softLilac,
+
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+              decoration: BoxDecoration(
+                color: AppColors.elevatedSurface,
+                border: Border.all(color: AppColors.border, width: 0.6),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(21),
+                  topRight: Radius.circular(21),
+                  bottomLeft: Radius.circular(6),
+                  bottomRight: Radius.circular(21),
+                ),
+              ),
+              child: AnimatedBuilder(
+                animation: _animation,
+                builder: (context, child) {
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(3, (index) {
+                      final phase = (_animation.value - index * 0.20 + 1) % 1;
+
+                      final opacity = phase < 0.28 ? 1.0 : 0.35;
+
+                      return Padding(
+                        padding: EdgeInsets.only(right: index == 2 ? 0 : 5),
+                        child: Opacity(
+                          opacity: opacity,
+                          child: const CircleAvatar(
+                            radius: 3.5,
+                            backgroundColor: AppColors.primary,
+                          ),
                         ),
-                      ),
-                    );
-                  }),
-                );
-              },
+                      );
+                    }),
+                  );
+                },
+              ),
             ),
           ],
         ),

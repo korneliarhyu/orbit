@@ -19,14 +19,14 @@ class NpcBioGenerator {
     // 1. Determine personality tendency.
     final playfulScore =
         (traits.contains(NpcTrait.playful) ? 2 : 0) +
-            (traits.contains(NpcTrait.witty) ? 2 : 0) +
-            (_playfulArchetypes.contains(archetype.id) ? 2 : 0);
+        (traits.contains(NpcTrait.witty) ? 2 : 0) +
+        (_playfulArchetypes.contains(archetype.id) ? 2 : 0);
 
     final seriousScore =
         (traits.contains(NpcTrait.serious) ? 2 : 0) +
-            (traits.contains(NpcTrait.intellectual) ? 1 : 0) +
-            (traits.contains(NpcTrait.mysterious) ? 1 : 0) +
-            (_seriousArchetypes.contains(archetype.id) ? 2 : 0);
+        (traits.contains(NpcTrait.intellectual) ? 1 : 0) +
+        (traits.contains(NpcTrait.mysterious) ? 1 : 0) +
+        (_seriousArchetypes.contains(archetype.id) ? 2 : 0);
 
     final mature = age >= 30;
 
@@ -43,11 +43,7 @@ class NpcBioGenerator {
     // 2. Sometimes mention their actual career by 25%[0.25].
     // Not every bio should read like a resume.
     if (career.trim().isNotEmpty && rng.nextDouble() < 0.25) {
-      final workBios = _careerBios(
-        career.trim(),
-        tone,
-        mature,
-      );
+      final workBios = _careerBios(career.trim(), tone, mature);
 
       return workBios[rng.nextInt(workBios.length)];
     }
@@ -75,10 +71,7 @@ class NpcBioGenerator {
     'charming_tease',
   };
 
-  static const _seriousArchetypes = {
-    'black_cat',
-    'quiet_genius',
-  };
+  static const _seriousArchetypes = {'black_cat', 'quiet_genius'};
 
   // ==========================================================
   // YOUNG PLAYFUL — 20s
@@ -153,15 +146,8 @@ class NpcBioGenerator {
   // ==========================================================
   // CAREER-AWARE BIOS
   // ==========================================================
-  static List<String> _careerBios(
-      String career,
-      _BioTone tone,
-      bool mature,
-      ) {
-    final article = RegExp(
-      r'^[aeiou]',
-      caseSensitive: false,
-    ).hasMatch(career)
+  static List<String> _careerBios(String career, _BioTone tone, bool mature) {
+    final article = RegExp(r'^[aeiou]', caseSensitive: false).hasMatch(career)
         ? 'an'
         : 'a';
 
@@ -197,8 +183,4 @@ class NpcBioGenerator {
   }
 }
 
-enum _BioTone {
-  playful,
-  serious,
-  balanced,
-}
+enum _BioTone { playful, serious, balanced }

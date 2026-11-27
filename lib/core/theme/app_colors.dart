@@ -1,55 +1,95 @@
-
 import 'package:flutter/material.dart';
 
 class AppColors {
-  // Background colors
-  static const Color background = Color(0xFF0B0914);
-  static const Color surface = Color(0xFF151526);
-  static const Color card = Color(0xFF1C1C31);
-  static const Color cardSoft = Color(0xFF23233A);
+  AppColors._();
 
-  // Main brand colors
-  static const Color primaryPink = Color(0xFFFF4EB8);
-  static const Color primaryPurple = Color(0xFF8A4DFF);
-  static const Color softLilac = Color(0xFFD6C2FF);
+  // ==========================================
+  // LUNAR EDITORIAL - DARK MODE
+  // ==========================================
+  static const Color background = Color(0xFF13121A);
+  static const Color surface = Color(0xFF1B1924);
+  static const Color elevatedSurface = Color(0xFF2A2535);
+  static const Color primary = Color(0xFFCFA7F5);
+  static const Color secondary = Color(0xFFE6B8E1);
+  static const Color border = Color(0xFF4A4058);
+  static const Color textPrimary = Color(0xFFF7F4FC);
+  static const Color textSecondary = Color(0xFFB8B0C5);
 
-  // Text colors
-  static const Color textPrimary = Color(0xFFF8F6FC);
-  static const Color textSecondary = Color(0xFFA8A1BD);
+  // ==========================================
+  // FUNCTIONAL COLORS
+  // ==========================================
+  static const Color success = Color(0xFF81C9A7);
+  static const Color error = Color(0xFFF29CA8);
+  static const Color warning = Color(0xFFF2CE91);
+  static const Color onPrimary = Color(0xFF211728);
+  static const Color receiptPending = Color(0xFF81778F);
+  static const Color receiptRead = primary;
 
-  // Additional colors
-  static const Color border = Color(0xFF2A2340);
-  static const Color success = Color(0xFF4ADE80);
-  static const Color danger = Color(0xFFFB7185);
+  // ==========================================
+  // BACKWARD COMPATIBILITY
+  // ==========================================
+  static const Color card = surface;
+  static const Color cardSoft = elevatedSurface;
 
-  // Main gradient
+  static const Color primaryPurple = primary;
+  static const Color primaryPink = secondary;
+  static const Color softLilac = primary;
+
+  static const Color danger = error;
+
+  // ==========================================
+  // PRIMARY GRADIENT
+  // ==========================================
   static const LinearGradient primaryGradient = LinearGradient(
-    colors: [
-      primaryPink,
-      primaryPurple,
-    ],
+    colors: [primary, secondary],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  // Card gradient
+  // ==========================================
+  // CHAT BUBBLE GRADIENT
+  // ==========================================
+  static const LinearGradient messageGradient = LinearGradient(
+    colors: [Color(0xFF9069B3), Color(0xFF76528F)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  // ==========================================
+  // CARD GRADIENT
+  // ==========================================
   static const LinearGradient cardGradient = LinearGradient(
-    colors: [
-      Color(0xFF241B3D),
-      Color(0xFF151526),
-    ],
+    colors: [elevatedSurface, surface],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  // Cosmic gradient
+  // ==========================================
+  // COSMIC GRADIENT
+  // ==========================================
   static const LinearGradient cosmicGradient = LinearGradient(
-    colors: [
-      Color(0xFF1A0F3D),
-      Color(0xFF632C98),
-      Color(0xFFB43A92),
-    ],
-    begin: Alignment.topLeft,
+    colors: [background, Color(0xFF24192E), Color(0xFF392344)],
+    begin: Alignment.topCenter,
     end: Alignment.bottomRight,
   );
+}
+
+// ==========================================
+// LUNAR DAWN - LIGHT MODE
+// ==========================================
+class AppLightColors {
+  AppLightColors._();
+
+  static const Color background = Color(0xFFF8F5FC);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color elevatedSurface = Color(0xFFF0EAF8);
+  static const Color primary = Color(0xFF6945A3);
+  static const Color secondary = Color(0xFF925283);
+  static const Color border = Color(0xFFDED4EB);
+  static const Color textPrimary = Color(0xFF241C35);
+  static const Color textSecondary = Color(0xFF675A79);
+  static const Color success = Color(0xFF247A53);
+  static const Color error = Color(0xFFB83250);
+  static const Color warning = Color(0xFF906016);
+  static const Color onPrimary = Color(0xFFFFFFFF);
 }

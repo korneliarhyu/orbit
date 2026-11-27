@@ -15,7 +15,6 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-
   late final AnimationController _entranceController;
   late final AnimationController _orbitController;
 
@@ -39,14 +38,8 @@ class _SplashScreenState extends State<SplashScreen>
       curve: Curves.easeInOut,
     );
 
-    _scaleAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.0,
-    ).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: Curves.easeOutBack,
-      ),
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _entranceController, curve: Curves.easeOutBack),
     );
 
     // Continuous orbit rotation
@@ -58,37 +51,20 @@ class _SplashScreenState extends State<SplashScreen>
     _entranceController.forward();
 
     // Navigate after 3 seconds
-    _navigationTimer = Timer(
-      const Duration(seconds: 3),
-          () {
-        if (!mounted) return;
+    _navigationTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
 
-        Navigator.of(context).pushReplacement(
-          PageRouteBuilder<void>(
-            pageBuilder: (
-                context,
-                animation,
-                secondaryAnimation,
-                ) => const HomeScreen(),
-            transitionDuration: const Duration(
-              milliseconds: 600,
-            ),
-            transitionsBuilder: (
-                context,
-                animation,
-                secondaryAnimation,
-                child,
-                ) {
-              return FadeTransition(
-                opacity: animation,
-                child: child,
-              );
-            },
-          ),
-        );
-
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder<void>(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              const HomeScreen(),
+          transitionDuration: const Duration(milliseconds: 600),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
           },
-    );
+        ),
+      );
+    });
   }
 
   @override
@@ -106,17 +82,11 @@ class _SplashScreenState extends State<SplashScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-
           // Galaxy background
-          Image.asset(
-            'lib/core/assets/bg.jpg',
-            fit: BoxFit.cover,
-          ),
+          Image.asset('lib/core/assets/bg.jpg', fit: BoxFit.cover),
 
           // Dark overlay for readability
-          const ColoredBox(
-            color: Color(0xBB0B0914),
-          ),
+          const ColoredBox(color: Color(0xBB0B0914)),
 
           // Subtle cosmic glow
           Container(
@@ -124,10 +94,7 @@ class _SplashScreenState extends State<SplashScreen>
               gradient: RadialGradient(
                 center: Alignment.center,
                 radius: 0.9,
-                colors: [
-                  Color(0x443F1675),
-                  Colors.transparent,
-                ],
+                colors: [Color(0x443F1675), Colors.transparent],
               ),
             ),
           ),
@@ -135,10 +102,7 @@ class _SplashScreenState extends State<SplashScreen>
           // Main content
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 30,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
               child: Column(
                 children: [
                   const Spacer(),
@@ -156,7 +120,6 @@ class _SplashScreenState extends State<SplashScreen>
                             child: Stack(
                               alignment: Alignment.center,
                               children: [
-
                                 // Rotating orbit rings
                                 RotationTransition(
                                   turns: _orbitController,
@@ -181,8 +144,9 @@ class _SplashScreenState extends State<SplashScreen>
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: AppColors.primaryPink
-                                            .withAlpha(105),
+                                        color: AppColors.primaryPink.withAlpha(
+                                          105,
+                                        ),
                                         blurRadius: 55,
                                         spreadRadius: 12,
                                       ),
@@ -250,21 +214,14 @@ class _SplashScreenState extends State<SplashScreen>
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(10),
                             child: TweenAnimationBuilder<double>(
-                              tween: Tween(
-                                begin: 0,
-                                end: 1,
-                              ),
-                              duration: const Duration(
-                                seconds: 3,
-                              ),
+                              tween: Tween(begin: 0, end: 1),
+                              duration: const Duration(seconds: 3),
                               builder: (context, value, child) {
                                 return LinearProgressIndicator(
                                   value: value,
                                   minHeight: 3,
-                                  backgroundColor:
-                                  AppColors.cardSoft,
-                                  valueColor:
-                                  const AlwaysStoppedAnimation(
+                                  backgroundColor: AppColors.cardSoft,
+                                  valueColor: const AlwaysStoppedAnimation(
                                     AppColors.primaryPink,
                                   ),
                                 );
@@ -291,10 +248,7 @@ class _SplashScreenState extends State<SplashScreen>
 class _OrbitPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(
-      size.width / 2,
-      size.height / 2,
-    );
+    final center = Offset(size.width / 2, size.height / 2);
 
     // First orbit
     canvas.save();
@@ -307,11 +261,7 @@ class _OrbitPainter extends CustomPainter {
       ..strokeWidth = 2.5;
 
     canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset.zero,
-        width: 205,
-        height: 95,
-      ),
+      Rect.fromCenter(center: Offset.zero, width: 205, height: 95),
       firstPaint,
     );
 
@@ -328,11 +278,7 @@ class _OrbitPainter extends CustomPainter {
       ..strokeWidth = 1.5;
 
     canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset.zero,
-        width: 190,
-        height: 85,
-      ),
+      Rect.fromCenter(center: Offset.zero, width: 190, height: 85),
       secondPaint,
     );
 

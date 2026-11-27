@@ -84,15 +84,56 @@ service cloud.firestore {
     // =========================================
     match /players/{userId}/matches/{npcId}/messages/{messageId} {
 
-      // Player can read their own chat history.
-      allow read: if isOwner(userId)
-        && exists(
+      function matchExists() {
+        return exists(
           /databases/$(database)/documents/players/$(userId)/matches/$(npcId)
         );
+      }
 
-      // All message writes must go through
-      // Firebase Cloud Functions.
-      allow create, update, delete: if false;
+      // Shared message visibility rules.
+      function messageRevealAt() {
+        let displayAt = resource.data.get('displayAt', null);
+
+        return displayAt is timestamp
+          ? displayAt
+          : resource.data.get('createdAt', null);
+      }
+
+      // Check whether the message is already visible.
+      function isMessageVisible() {
+        let revealAt = messageRevealAt();
+
+        return revealAt is timestamp
+          && revealAt <= request.time;
+      }
+
+      // Player can read their own chat history.
+      allow read: if isOwner(userId)
+        && matchExists();
+
+      // Player can ONLY mark an incoming NPC message as read.
+      allow update: if isOwner(userId)
+        && matchExists()
+
+        // Incoming NPC messages only.
+        && resource.data.sender == 'npc'
+
+        // Scheduled messages cannot be marked as read early.
+        && isMessageVisible()
+
+        // Message has not been marked as read previously.
+        && resource.data.get('playerReadAt', null) == null
+
+        // Only playerReadAt may be changed.
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly(['playerReadAt'])
+
+        // Must use the current server timestamp.
+        && request.resource.data.playerReadAt is timestamp
+        && request.resource.data.playerReadAt == request.time;
+
+      // Message creation and deletion remain backend-only.
+      allow create, delete: if false;
     }
   }
 }

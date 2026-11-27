@@ -1,52 +1,150 @@
 import 'package:flutter/material.dart';
+
 import '../theme/app_colors.dart';
+import '../../features/npc/npc_avatar_widget.dart';
 
+/// Shared circular avatar for ORBIT.
+///
+/// [portraitScale] controls how zoomed-in the whole NPC portrait appears.
+/// All circular avatars use the same default crop.
 class OrbitAvatar extends StatelessWidget {
-  final double size;
-  final String? imageUrl;
-  final bool isOnline;
-
   const OrbitAvatar({
     super.key,
     this.size = 52,
+    this.radius,
+    this.name,
     this.imageUrl,
+    this.avatarIndex,
     this.isOnline = false,
+    this.highlighted = false,
+    this.portraitScale = 1.38,
+    this.fallbackAsset,
+    this.fallbackAlignment = Alignment.center,
   });
+
+  final double size;
+  final double? radius;
+  final String? name;
+  final String? imageUrl;
+  final int? avatarIndex;
+  final bool isOnline;
+  final bool highlighted;
+  final double portraitScale;
+  final String? fallbackAsset;
+  final Alignment fallbackAlignment;
+
+  /// Reads a previously saved portrait index; never randomizes a match's face.
+  static int? indexFromMatchData(Map<String, dynamic>? data) {
+    if (data == null) return null;
+
+    dynamic value = data['avatarIndex'];
+    if (value == null && data['npc'] is Map) {
+      value = (data['npc'] as Map)['avatarIndex'];
+    }
+
+    if (value is int) return value >= 0 ? value : null;
+    if (value is num) {
+      return value.isFinite && value >= 0 ? value.toInt() : null;
+    }
+    if (value is String) {
+      final parsed = int.tryParse(value);
+      return parsed != null && parsed >= 0 ? parsed : null;
+    }
+    return null;
+  }
+
+  Widget _fallback(double diameter) {
+    final initial = name == null || name!.trim().isEmpty
+        ? null
+        : name!.trim()[0].toUpperCase();
+
+    return ColoredBox(
+      color: AppColors.elevatedSurface,
+      child: Center(
+        child: initial != null
+            ? Text(
+                initial,
+                style: TextStyle(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: diameter * 0.38,
+                ),
+              )
+            : Icon(
+                Icons.person_rounded,
+                color: AppColors.primary,
+                size: diameter * 0.5,
+              ),
+      ),
+    );
+  }
+
+  Widget _fallbackImage(double diameter) {
+    final asset = fallbackAsset;
+    if (asset == null) return _fallback(diameter);
+    return Image.asset(
+      asset,
+      fit: BoxFit.cover,
+      alignment: fallbackAlignment,
+      errorBuilder: (_, _, _) => _fallback(diameter),
+    );
+  }
+
+  Widget _npcPortrait(double innerDiameter) {
+    final imageWidth = innerDiameter * portraitScale;
+    final imageHeight = imageWidth * (1402 / 1122);
+
+    return Stack(
+      clipBehavior: Clip.hardEdge,
+      children: [
+        Positioned(
+          left: (innerDiameter - imageWidth) / 2,
+          // Keep the facial area centered as the portrait scale changes.
+          top: innerDiameter / 2 - imageHeight * 0.38,
+          width: imageWidth,
+          height: imageHeight,
+          child: NpcAvatarWidget(avatarIndex: avatarIndex!, width: imageWidth),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final diameter = radius != null ? radius! * 2 : size;
+    final innerSize = diameter - 4;
+
     return SizedBox(
-      width: size,
-      height: size,
+      width: diameter,
+      height: diameter,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Container(
-            width: size,
-            height: size,
+            width: diameter,
+            height: diameter,
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: AppColors.primaryPurple,
-                width: 1.5,
+                color: highlighted ? AppColors.primary : AppColors.border,
+                width: highlighted ? 1.8 : 1.2,
               ),
             ),
-            child: CircleAvatar(
-              backgroundColor: AppColors.card,
-              backgroundImage: imageUrl != null
-                  ? NetworkImage(imageUrl!)
-                  : null,
-              child: imageUrl == null
-                  ? Icon(
-                Icons.person_rounded,
-                color: AppColors.softLilac,
-                size: size * 0.5,
-              )
-                  : null,
+            child: ClipOval(
+              child: avatarIndex != null
+                  ? _npcPortrait(innerSize)
+                  : imageUrl != null
+                  ? Image.network(
+                      imageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return _fallbackImage(innerSize);
+                      },
+                    )
+                  : _fallbackImage(innerSize),
             ),
           ),
-
           if (isOnline)
             Positioned(
               right: 0,
@@ -57,10 +155,7 @@ class OrbitAvatar extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.success,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.background,
-                    width: 2,
-                  ),
+                  border: Border.all(color: AppColors.background, width: 2),
                 ),
               ),
             ),

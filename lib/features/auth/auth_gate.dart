@@ -1,15 +1,12 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
 import '../profile/orbit_profile.dart';
 import '../home_screen.dart';
 import '../profile/profile_setup_screen.dart';
 import 'auth_screen.dart';
 
-enum _GatePage {
-  signUp,
-  buildIdentity,
-  home,
-}
+enum _GatePage { signUp, buildIdentity, home }
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -43,13 +40,14 @@ class _AuthGateState extends State<AuthGate> {
       final code = error.code.toLowerCase();
       final message = (error.message ?? '').toUpperCase();
 
-      final invalidSession = {
-        'invalid-user-token',
-        'user-token-expired',
-        'user-disabled',
-        'user-not-found',
-        'invalid-credential',
-      }.contains(code) ||
+      final invalidSession =
+          {
+            'invalid-user-token',
+            'user-token-expired',
+            'user-disabled',
+            'user-not-found',
+            'invalid-credential',
+          }.contains(code) ||
           message.contains('INVALID_REFRESH_TOKEN');
 
       if (invalidSession) {
@@ -68,16 +66,12 @@ class _AuthGateState extends State<AuthGate> {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, authSnapshot) {
-        if (authSnapshot.connectionState ==
-            ConnectionState.waiting) {
+        if (authSnapshot.connectionState == ConnectionState.waiting) {
           return _loadingScreen();
         }
 
         if (authSnapshot.hasError) {
-          return _errorScreen(
-            'Authentication failed.',
-                () => setState(() {}),
-          );
+          return _errorScreen('Authentication failed.', () => setState(() {}));
         }
 
         final user = authSnapshot.data;
@@ -98,22 +92,16 @@ class _AuthGateState extends State<AuthGate> {
           future: _pageFuture,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              debugPrint(
-                'ORBIT GATE ERROR: ${snapshot.error}',
-              );
+              debugPrint('ORBIT GATE ERROR: ${snapshot.error}');
 
-              return _errorScreen(
-                'Unable to connect to your universe.',
-                    () {
-                  setState(() {
-                    _pageFuture = _checkPlayer(user);
-                  });
-                },
-              );
+              return _errorScreen('Unable to connect to your universe.', () {
+                setState(() {
+                  _pageFuture = _checkPlayer(user);
+                });
+              });
             }
 
-            if (snapshot.connectionState !=
-                ConnectionState.done) {
+            if (snapshot.connectionState != ConnectionState.done) {
               return _loadingScreen();
             }
 
@@ -139,18 +127,11 @@ class _AuthGateState extends State<AuthGate> {
   Widget _loadingScreen() {
     return const Scaffold(
       backgroundColor: Color(0xFF0B0718),
-      body: Center(
-        child: CircularProgressIndicator(
-          color: Color(0xFFFF4EB8),
-        ),
-      ),
+      body: Center(child: CircularProgressIndicator(color: Color(0xFFFF4EB8))),
     );
   }
 
-  Widget _errorScreen(
-      String message,
-      VoidCallback onRetry,
-      ) {
+  Widget _errorScreen(String message, VoidCallback onRetry) {
     return Scaffold(
       backgroundColor: const Color(0xFF0B0718),
       body: Center(
@@ -166,15 +147,10 @@ class _AuthGateState extends State<AuthGate> {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFFD6C2FF),
-              ),
+              style: const TextStyle(color: Color(0xFFD6C2FF)),
             ),
             const SizedBox(height: 20),
-            TextButton(
-              onPressed: onRetry,
-              child: const Text('Retry'),
-            ),
+            TextButton(onPressed: onRetry, child: const Text('Retry')),
             TextButton(
               onPressed: () async {
                 await FirebaseAuth.instance.signOut();

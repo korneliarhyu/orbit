@@ -1,4 +1,3 @@
-
 import 'dart:math';
 
 import 'npc_outfit_generator.dart';
@@ -37,8 +36,7 @@ class NpcAppearance {
   // ASSET CONFIGURATION
   // =====================================================
 
-  static const String assetRoot =
-      'lib/core/assets/npc';
+  static const String assetRoot = 'lib/core/assets/npc';
 
   String get assetFolder => '$assetRoot/front';
 
@@ -75,14 +73,10 @@ class NpcAppearance {
   ///
   /// The avatar renderer maps these selections to
   /// the actual available assets.
-  factory NpcAppearance.generate({
-    required String career,
-    required int seed,
-  }) {
+  factory NpcAppearance.generate({required String career, required int seed}) {
     final rng = Random(seed);
 
-    int nextVariant() =>
-        rng.nextInt(0x7fffffff) + 1;
+    int nextVariant() => rng.nextInt(0x7fffffff) + 1;
 
     final face = nextVariant();
     final eyes = nextVariant();
@@ -93,10 +87,7 @@ class NpcAppearance {
     return NpcAppearance(
       seed: seed,
       career: career,
-      outfit: NpcOutfitGenerator.generate(
-        career,
-        random: rng,
-      ),
+      outfit: NpcOutfitGenerator.generate(career, random: rng),
       face: face,
       eyes: eyes,
       hair: hair,
@@ -126,57 +117,32 @@ class NpcAppearance {
   // =====================================================
 
   /// Supports older saved appearances.
-  factory NpcAppearance.fromJson(
-      Map<String, dynamic> json,
-      ) {
+  factory NpcAppearance.fromJson(Map<String, dynamic> json) {
     final seed = _readInt(json, ['seed']) ?? 0;
 
-    final career =
-        json['career']?.toString() ?? '';
+    final career = json['career']?.toString() ?? '';
 
-    final fallback = NpcAppearance.generate(
-      career: career,
-      seed: seed,
-    );
+    final fallback = NpcAppearance.generate(career: career, seed: seed);
 
-    final angleName =
-        json['angle']?.toString() ?? 'front';
+    final angleName = json['angle']?.toString() ?? 'front';
 
     final angle = NpcAngle.values.firstWhere(
-          (value) => value.name == angleName,
+      (value) => value.name == angleName,
       orElse: () => NpcAngle.front,
     );
 
     return NpcAppearance(
       seed: seed,
       career: career,
-      outfit: json['outfit']?.toString() ??
-          fallback.outfit,
+      outfit: json['outfit']?.toString() ?? fallback.outfit,
       angle: angle,
-      face: _readInt(
-        json,
-        ['face', 'skinTone'],
-      ) ??
-          fallback.face,
-      eyes: _readInt(
-        json,
-        ['eyes'],
-      ) ??
-          fallback.eyes,
-      hair: _readInt(
-        json,
-        ['hair', 'hairFront', 'hair_front'],
-      ) ??
-          fallback.hair,
-      nose: _readInt(
-        json,
-        ['nose'],
-      ) ??
-          fallback.nose,
-      outfitVariant: _readInt(
-        json,
-        ['outfitVariant', 'outfitIndex'],
-      ) ??
+      face: _readInt(json, ['face', 'skinTone']) ?? fallback.face,
+      eyes: _readInt(json, ['eyes']) ?? fallback.eyes,
+      hair:
+          _readInt(json, ['hair', 'hairFront', 'hair_front']) ?? fallback.hair,
+      nose: _readInt(json, ['nose']) ?? fallback.nose,
+      outfitVariant:
+          _readInt(json, ['outfitVariant', 'outfitIndex']) ??
           fallback.outfitVariant,
     );
   }
@@ -185,10 +151,7 @@ class NpcAppearance {
   // HELPERS
   // =====================================================
 
-  static int? _readInt(
-      Map<String, dynamic> json,
-      List<String> keys,
-      ) {
+  static int? _readInt(Map<String, dynamic> json, List<String> keys) {
     for (final key in keys) {
       final value = json[key];
 
@@ -213,7 +176,8 @@ class NpcAppearance {
   }
 
   @override
-  String toString() => 'NpcAppearance('
+  String toString() =>
+      'NpcAppearance('
       'seed: $seed, '
       'career: $career, '
       'outfit: $outfit, '
