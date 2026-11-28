@@ -1,18 +1,24 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/constants/app_radius.dart';
+import '../../core/constants/app_spacing.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../core/widgets/app_avatar.dart';
+import '../../core/widgets/app_icon_button.dart';
 import '../../core/services/ai_service.dart';
 import '../../core/services/active_conversation_tracker.dart';
 import '../../core/utils/message_visibility.dart';
 import '../../core/utils/message_read_status.dart';
+import '../../core/utils/orbit_logger.dart';
 import '../discover/match_service.dart';
 import 'npc_chat_service.dart';
-import '../npc/npc_avatar_widget.dart';
 
 // ======================================================
 // ORBIT - LUNAR LAVENDER CHAT SCREEN
@@ -84,13 +90,70 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         !_canMarkRead) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrbitLogger.error('NPC reply failed', error: failure.error);
+    final error = failure.error;
+    if (error is FirebaseFunctionsException &&
+        error.code == 'resource-exhausted') {
+      final details = error.details;
+      final reason = details is Map ? details['reason'] : null;
+      if (reason == 'ai_daily_quota') {
+        _showChatNotice('Daily demo limit reached. Your messages are saved.');
+        return;
+      }
+      if (reason == 'ai_rate_limit') {
+        _showChatNotice('Your messages are saved. Try again in a moment.');
+        return;
+      }
+    }
+    _showChatNotice(
+      'Your messages are saved. Your companion could not reply right now.',
+    );
+  }
+
+  // Keep technical details out of user-facing notifications.
+  void _showChatNotice(String message) {
+    if (!_canMarkRead) return;
+
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
       SnackBar(
-        content: Text(
-          'NPC reply failed; messages were saved: ${failure.error}',
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.elevatedSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          side: const BorderSide(color: AppColors.border),
         ),
+        content: Text(message, style: AppTextStyles.body),
       ),
     );
+  }
+
+  String _sendErrorMessage(Object error) {
+    if (error is FirebaseFunctionsException) {
+      switch (error.code) {
+        case 'resource-exhausted':
+          return 'Slow down a little. Try again shortly.';
+        case 'unauthenticated':
+          return 'Your session has expired. Please sign in again.';
+        case 'failed-precondition':
+          return 'This conversation is no longer active.';
+        case 'not-found':
+          return 'This conversation is no longer available.';
+        case 'unavailable':
+        case 'deadline-exceeded':
+          return 'Could not confirm delivery. Check your connection.';
+        case 'invalid-argument':
+          return 'Check your message and try again.';
+        case 'permission-denied':
+          return 'You cannot send messages to this conversation.';
+      }
+    }
+
+    return 'Could not send your message. Please try again.';
   }
 
   @override
@@ -138,8 +201,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               MessageReadStatus.isUnread(doc.data(), now: now),
         )
         .toList();
-    if (unread.isEmpty && (!markFirstMessage || _openingMatch || _openedMatch))
+    if (unread.isEmpty &&
+        (!markFirstMessage || _openingMatch || _openedMatch)) {
       return;
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_canMarkRead) return;
@@ -159,7 +224,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       await NpcChatService.instance.markMessageAsRead(widget.npcId, messageId);
       _markedRead.add(messageId);
     } catch (error) {
-      debugPrint('ORBIT mark message read: $error');
+      OrbitLogger.debug('ORBIT mark message read: $error');
     } finally {
       _readWrites.remove(messageId);
     }
@@ -171,7 +236,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       await MatchService.instance.markOpened(widget.npcId);
       _openedMatch = true;
     } catch (error) {
-      debugPrint('ORBIT mark first message read: $error');
+      OrbitLogger.debug('ORBIT mark first message read: $error');
     } finally {
       _openingMatch = false;
     }
@@ -230,11 +295,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
 
       _scrollToBottom();
-    } catch (error) {
+    } catch (error, stackTrace) {
+      OrbitLogger.error(
+        'Send player message failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Message not sent: $error')));
+      _showChatNotice(_sendErrorMessage(error));
     } finally {
       if (mounted) {
         setState(() => _sending = false);
@@ -294,11 +363,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Connection ended.')));
-    } catch (error) {
+    } catch (error, stackTrace) {
+      OrbitLogger.error(
+        'End match failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not end match: $error')));
+      _showChatNotice('Could not end this connection. Please try again.');
     }
   }
 
@@ -353,18 +426,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      // The shared MaterialApp background provides the subtle cosmic texture.
+      backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: true,
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(0.8, 0.12),
-            radius: 1.25,
-            colors: [Color(0xFF211A2B), AppColors.background],
-          ),
-        ),
-        child: SafeArea(child: _buildNpcRoom()),
-      ),
+      body: SafeArea(child: _buildNpcRoom()),
     );
   }
 
@@ -404,7 +469,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
         final species = (npc['species'] as String?)?.trim();
 
-        final avatarIndex = (npc['avatarIndex'] as num?)?.toInt() ?? 0;
+        final avatarIndex = OrbitAvatar.indexFromMatchData(npc);
 
         final displayName = age == null ? name : '$name, $age';
 
@@ -473,11 +538,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Widget _status(String message) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xxl),
         child: Text(
           message,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: AppColors.textSecondary),
+          style: AppTextStyles.bodyMuted,
         ),
       ),
     );
@@ -500,37 +565,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Widget _intimacyBadge(String label) {
-    const lilac = Color(0xFFD8B9EE);
     return Semantics(
       label: 'Intimacy: $label',
       excludeSemantics: true,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xFF30253D),
-          border: Border.all(color: const Color(0xFF594469), width: 0.7),
-          borderRadius: BorderRadius.circular(30),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.favorite_border_rounded, color: lilac, size: 12),
-            const SizedBox(width: 5),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: lilac,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                  height: 1.15,
-                ),
-              ),
-            ),
-          ],
-        ),
+      child: Text(
+        '✦  $label',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTextStyles.badge,
       ),
     );
   }
@@ -542,26 +584,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     String? intimacyLabel,
     bool ended = false,
   }) {
-    final hasPilotCareer = subtitle.toLowerCase().contains('pilot');
-
     return Container(
-      padding: const EdgeInsets.fromLTRB(4, 7, 8, 8),
-      decoration: const BoxDecoration(
-        color: AppColors.background,
-        border: Border(bottom: BorderSide(color: AppColors.border, width: 0.6)),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xs,
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.background.withValues(alpha: 0.94),
+        border: const Border(
+          bottom: BorderSide(color: AppColors.border, width: 0.6),
+        ),
       ),
       child: Row(
         children: [
-          IconButton(
+          OrbitIconButton(
             tooltip: 'Back',
-            onPressed: () => Navigator.maybePop(context),
-            icon: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: AppColors.textPrimary,
-              size: 19,
-            ),
+            icon: Icons.arrow_back_ios_new_rounded,
+            onTap: () => Navigator.maybePop(context),
+            variant: OrbitIconButtonVariant.ghost,
+            size: 48,
+            iconSize: 19,
           ),
-          // Avatar + name open the same future character profile.
           Expanded(
             child: Material(
               color: Colors.transparent,
@@ -569,17 +614,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 message: 'View character profile',
                 child: InkWell(
                   onTap: _openCharacterProfile,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.xs,
+                    ),
                     child: Row(
                       children: [
-                        _ChatAvatar(
+                        OrbitAvatar(
                           name: name,
                           avatarIndex: avatarIndex,
-                          size: 50,
+                          size: 48,
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: AppSpacing.avatarGap),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -589,44 +636,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                 name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
-                                ),
+                                style: AppTextStyles.title,
                               ),
-                              const SizedBox(height: 3),
-                              Row(
-                                children: [
-                                  Icon(
-                                    ended
-                                        ? Icons.link_off_rounded
-                                        : hasPilotCareer
-                                        ? Icons.flight_takeoff_rounded
-                                        : Icons.public_rounded,
-                                    color: AppColors.primary,
-                                    size: 13,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Expanded(
-                                    child: Text(
-                                      ended
-                                          ? 'Connection ended'
-                                          : subtitle.isNotEmpty
-                                          ? subtitle
-                                          : 'AI Companion',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                              const SizedBox(height: 2),
+                              Text(
+                                ended
+                                    ? 'Connection ended'
+                                    : subtitle.isNotEmpty
+                                    ? subtitle
+                                    : 'AI Companion',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.caption,
                               ),
                               if (intimacyLabel != null && !ended) ...[
-                                const SizedBox(height: 5),
+                                const SizedBox(height: AppSpacing.xs),
                                 _intimacyBadge(intimacyLabel),
                               ],
                             ],
@@ -639,16 +663,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: AppSpacing.xs),
           if (!ended)
-            IconButton(
+            OrbitIconButton(
               tooltip: 'Unmatch',
-              onPressed: _confirmUnmatch,
-              icon: const Icon(
-                Icons.link_off_rounded,
-                color: AppColors.textSecondary,
-                size: 23,
-              ),
+              icon: Icons.link_off_rounded,
+              onTap: _confirmUnmatch,
+              variant: OrbitIconButtonVariant.ghost,
+              size: 48,
+              iconSize: 22,
             )
           else
             const SizedBox(width: 48),
@@ -814,7 +837,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return _messageList(
           visibleEntries,
           companionName: npc['name'] as String? ?? 'NPC',
-          avatarIndex: (npc['avatarIndex'] as num?)?.toInt() ?? 0,
+          avatarIndex: OrbitAvatar.indexFromMatchData(npc),
           typingName: showTyping ? npc['name'] as String? ?? 'NPC' : null,
         );
       },
@@ -837,7 +860,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return ListView.builder(
       controller: _scrollController,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(14, 6, 14, 24),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.sm,
+        AppSpacing.lg,
+        AppSpacing.xxl,
+      ),
       itemCount: entries.length + (typingName == null ? 0 : 1),
       itemBuilder: (context, index) {
         if (index == entries.length) {
@@ -911,19 +939,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Widget _datePill(String label) {
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 16),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Flexible(
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ),
+          const Expanded(child: Divider(color: AppColors.border)),
+          const SizedBox(width: 12),
+          Text('✦', style: TextStyle(color: AppColors.primary, fontSize: 11)),
+          const SizedBox(width: 8),
+          Text(label, style: AppTextStyles.timestamp),
+          const SizedBox(width: 8),
+          Text('✦', style: TextStyle(color: AppColors.primary, fontSize: 11)),
+          const SizedBox(width: 12),
+          const Expanded(child: Divider(color: AppColors.border)),
         ],
       ),
     );
@@ -944,27 +972,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final bubble = ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxBubbleWidth),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.bubbleHorizontal,
+          vertical: AppSpacing.md,
+        ),
         decoration: BoxDecoration(
-          color: mine ? const Color(0xFFD0B2D9) : const Color(0xFF302C36),
-          border: mine
-              ? null
-              : Border.all(color: const Color(0xFF5B5264), width: 0.7),
+          color: mine ? AppColors.primary : AppColors.elevatedSurface,
+          border: mine ? null : Border.all(color: AppColors.border, width: 0.7),
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(21),
-            topRight: const Radius.circular(21),
-            bottomLeft: Radius.circular(mine ? 21 : 6),
-            bottomRight: Radius.circular(mine ? 6 : 21),
+            topLeft: const Radius.circular(AppRadius.chatBubble),
+            topRight: const Radius.circular(AppRadius.chatBubble),
+            bottomLeft: Radius.circular(
+              mine ? AppRadius.chatBubble : AppRadius.chatBubbleCorner,
+            ),
+            bottomRight: Radius.circular(
+              mine ? AppRadius.chatBubbleCorner : AppRadius.chatBubble,
+            ),
           ),
         ),
         child: Text(
           message.text,
           softWrap: true,
-          style: TextStyle(
-            color: mine ? const Color(0xFF211A2B) : AppColors.textPrimary,
-            fontSize: 15.5,
-            height: 1.4,
-          ),
+          style: mine ? AppTextStyles.messageMine : AppTextStyles.message,
         ),
       ),
     );
@@ -973,13 +1002,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (message.at != null)
-          Text(
-            _formatTime(message.at!),
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 11,
-            ),
-          ),
+          Text(_formatTime(message.at!), style: AppTextStyles.timestamp),
         if (mine) ...[
           if (message.at != null) const SizedBox(width: 5),
           Icon(
@@ -988,8 +1011,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 : Icons.done_all_rounded,
 
             color: message.deliveryStatus == _MessageDeliveryStatus.read
-                ? const Color(0xFFD7B6E5)
-                : const Color(0xFF81778F),
+                ? AppColors.receiptRead
+                : AppColors.receiptPending,
 
             size: 16,
           ),
@@ -998,7 +1021,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.only(bottom: AppSpacing.messageGroupGap),
       child: Row(
         mainAxisAlignment: mine
             ? MainAxisAlignment.end
@@ -1006,7 +1029,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!mine) ...[
-            _ChatAvatar(
+            OrbitAvatar(
               name: companionName,
               avatarIndex: avatarIndex,
               size: 32,
@@ -1024,9 +1047,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 if (message.at != null || mine)
                   Padding(
                     padding: EdgeInsets.only(
-                      top: 5,
-                      left: mine ? 0 : 6,
-                      right: mine ? 6 : 0,
+                      top: AppSpacing.timestampGap,
+                      left: mine ? 0 : AppSpacing.xs,
+                      right: mine ? AppSpacing.xs : 0,
                     ),
                     child: metadata,
                   ),
@@ -1056,33 +1079,46 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final canSend = _controller.text.trim().isNotEmpty && !_sending;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 9, 12, 14),
-      decoration: const BoxDecoration(
-        color: AppColors.background,
-        border: Border(top: BorderSide(color: AppColors.border, width: 0.6)),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.background.withValues(alpha: 0.94),
+        border: const Border(
+          top: BorderSide(color: AppColors.border, width: 0.6),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           // Add attachment
-          _roundAction(
+          OrbitIconButton(
             icon: Icons.attach_file_rounded,
             tooltip: 'Attachments coming soon',
+            variant: OrbitIconButtonVariant.ghost,
+            size: 48,
+            iconSize: 22,
             onTap: () {
               _showComingSoon('Attachments');
             },
           ),
 
-          const SizedBox(width: 9),
+          const SizedBox(width: AppSpacing.composerGap),
 
           // Message input
           Expanded(
             child: Container(
-              constraints: const BoxConstraints(minHeight: 46),
-              padding: const EdgeInsets.only(left: 15, right: 3),
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.only(
+                left: AppSpacing.inputHorizontal,
+                right: AppSpacing.xs,
+              ),
               decoration: BoxDecoration(
                 color: AppColors.surface,
-                borderRadius: BorderRadius.circular(26),
+                borderRadius: BorderRadius.circular(AppRadius.composer),
                 border: Border.all(color: AppColors.border),
               ),
               child: Row(
@@ -1109,18 +1145,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         _sendMessage();
                       },
 
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                      ),
+                      style: AppTextStyles.input,
 
                       decoration: const InputDecoration(
                         hintText: 'Type a message...',
-                        hintStyle: TextStyle(color: AppColors.textSecondary),
+                        hintStyle: AppTextStyles.inputHint,
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(vertical: 12),
+                        contentPadding: EdgeInsets.symmetric(
+                          vertical: AppSpacing.inputVertical,
+                        ),
                         isDense: true,
                       ),
                     ),
@@ -1166,52 +1201,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
           ),
 
-          const SizedBox(width: 9),
+          const SizedBox(width: AppSpacing.composerGap),
 
           // Send button
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: canSend ? AppColors.primaryGradient : null,
-              color: canSend ? null : AppColors.elevatedSurface,
-            ),
-            child: IconButton(
-              tooltip: 'Send message',
-              onPressed: canSend ? _sendMessage : null,
-              icon: Icon(
-                Icons.send_rounded,
-                size: 21,
-                color: canSend ? AppColors.onPrimary : AppColors.textSecondary,
-              ),
-            ),
+          OrbitIconButton(
+            tooltip: 'Send message',
+            icon: Icons.send_rounded,
+            variant: OrbitIconButtonVariant.primary,
+            size: 48,
+            iconSize: 21,
+            onTap: canSend ? _sendMessage : null,
           ),
         ],
-      ),
-    );
-  }
-
-  // ====================================================
-  // ROUND ACTION BUTTON
-  // ====================================================
-  Widget _roundAction({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback onTap,
-  }) {
-    return Container(
-      width: 46,
-      height: 46,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: IconButton(
-        tooltip: tooltip,
-        onPressed: onTap,
-        icon: Icon(icon, color: AppColors.textPrimary, size: 23),
       ),
     );
   }
@@ -1254,86 +1255,20 @@ class _ChatEntry {
 Widget _endedChatBanner(bool endedByNpc) {
   return Container(
     width: double.infinity,
-    padding: const EdgeInsets.all(16),
-    color: AppColors.cardSoft,
+    padding: const EdgeInsets.all(AppSpacing.lg),
+    color: AppColors.elevatedSurface,
     child: Text(
       endedByNpc
           ? 'This character decided to end '
                 'the connection.'
           : 'You ended this connection.',
       textAlign: TextAlign.center,
-      style: const TextStyle(color: AppColors.softLilac),
+      style: AppTextStyles.body.copyWith(color: AppColors.primary),
     ),
   );
 }
 
 // ======================================================
-// COMPANION AVATAR PLACEHOLDER
-// ======================================================
-class _CompanionAvatar extends StatelessWidget {
-  const _CompanionAvatar({required this.name, required this.radius});
-
-  final String name;
-  final double radius;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: radius * 2,
-      height: radius * 2,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: AppColors.primaryGradient,
-        border: Border.all(color: AppColors.border, width: 1.2),
-      ),
-      child: Text(
-        name.isEmpty ? '?' : name.substring(0, 1).toUpperCase(),
-        style: TextStyle(
-          color: AppColors.onPrimary,
-          fontWeight: FontWeight.w700,
-          fontSize: radius * 0.80,
-        ),
-      ),
-    );
-  }
-}
-
-// ======================================================
-// NPC AVATAR (uses the shared portrait asset widget)
-// ======================================================
-class _ChatAvatar extends StatelessWidget {
-  const _ChatAvatar({required this.name, required this.size, this.avatarIndex});
-
-  final String name;
-  final double size;
-  final int? avatarIndex;
-
-  @override
-  Widget build(BuildContext context) {
-    if (avatarIndex == null) {
-      return _CompanionAvatar(name: name, radius: size / 2);
-    }
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: AppColors.border, width: 1.1),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: ClipOval(
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: NpcAvatarWidget(avatarIndex: avatarIndex!, width: size),
-        ),
-      ),
-    );
-  }
-}
-
 // ANIMATED NPC TYPING BUBBLE
 // ======================================================
 class _TypingBubble extends StatefulWidget {
@@ -1375,7 +1310,7 @@ class _TypingBubbleState extends State<_TypingBubble>
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            _ChatAvatar(
+            OrbitAvatar(
               name: widget.name,
               avatarIndex: widget.avatarIndex,
               size: 32,
@@ -1389,10 +1324,10 @@ class _TypingBubbleState extends State<_TypingBubble>
                 color: AppColors.elevatedSurface,
                 border: Border.all(color: AppColors.border, width: 0.6),
                 borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(21),
-                  topRight: Radius.circular(21),
-                  bottomLeft: Radius.circular(6),
-                  bottomRight: Radius.circular(21),
+                  topLeft: Radius.circular(AppRadius.chatBubble),
+                  topRight: Radius.circular(AppRadius.chatBubble),
+                  bottomLeft: Radius.circular(AppRadius.chatBubbleCorner),
+                  bottomRight: Radius.circular(AppRadius.chatBubble),
                 ),
               ),
               child: AnimatedBuilder(

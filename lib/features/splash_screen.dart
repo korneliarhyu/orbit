@@ -1,11 +1,10 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_colors.dart';
-import 'home_screen.dart';
 
+/// Branded loading screen shown while AuthGate resolves the player session.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -14,279 +13,121 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen>
-    with TickerProviderStateMixin {
-  late final AnimationController _entranceController;
-  late final AnimationController _orbitController;
-
-  late final Animation<double> _fadeAnimation;
-  late final Animation<double> _scaleAnimation;
-
-  Timer? _navigationTimer;
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-
-    // Logo and text entrance animation
-    _entranceController = AnimationController(
+    _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1800),
     );
+  }
 
-    _fadeAnimation = CurvedAnimation(
-      parent: _entranceController,
-      curve: Curves.easeInOut,
-    );
-
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(parent: _entranceController, curve: Curves.easeOutBack),
-    );
-
-    // Continuous orbit rotation
-    _orbitController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    )..repeat();
-
-    _entranceController.forward();
-
-    // Navigate after 3 seconds
-    _navigationTimer = Timer(const Duration(seconds: 3), () {
-      if (!mounted) return;
-
-      Navigator.of(context).pushReplacement(
-        PageRouteBuilder<void>(
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              const HomeScreen(),
-          transitionDuration: const Duration(milliseconds: 600),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-        ),
-      );
-    });
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
   }
 
   @override
   void dispose() {
-    _navigationTimer?.cancel();
-    _entranceController.dispose();
-    _orbitController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Galaxy background
-          Image.asset('lib/core/assets/bg.jpg', fit: BoxFit.cover),
-
-          // Dark overlay for readability
-          const ColoredBox(color: Color(0xBB0B0914)),
-
-          // Subtle cosmic glow
-          Container(
-            decoration: const BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment.center,
-                radius: 0.9,
-                colors: [Color(0x443F1675), Colors.transparent],
-              ),
-            ),
-          ),
-
-          // Main content
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
-              child: Column(
-                children: [
-                  const Spacer(),
-
-                  // Animated central logo
-                  FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: ScaleTransition(
-                      scale: _scaleAnimation,
-                      child: Column(
-                        children: [
-                          SizedBox(
-                            width: 220,
-                            height: 220,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                // Rotating orbit rings
-                                RotationTransition(
-                                  turns: _orbitController,
-                                  child: CustomPaint(
-                                    size: const Size(210, 210),
-                                    painter: _OrbitPainter(),
-                                  ),
-                                ),
-
-                                // Glowing planet
-                                Container(
-                                  width: 105,
-                                  height: 105,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: const RadialGradient(
-                                      colors: [
-                                        Color(0xFFFFB7ED),
-                                        Color(0xFF984DE1),
-                                        Color(0xFF391461),
-                                      ],
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: AppColors.primaryPink.withAlpha(
-                                          105,
-                                        ),
-                                        blurRadius: 55,
-                                        spreadRadius: 12,
-                                      ),
-                                    ],
-                                  ),
-                                  child: const Icon(
-                                    Icons.auto_awesome_rounded,
-                                    color: Colors.white,
-                                    size: 34,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          const SizedBox(height: 30),
-
-                          const Text(
-                            'ORBIT',
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 44,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 10,
-                            ),
-                          ),
-
-                          const SizedBox(height: 12),
-
-                          const Text(
-                            'A world that remembers you.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: AppColors.softLilac,
-                              fontSize: 14,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
+      backgroundColor: AppColors.surface,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: AspectRatio(
+                aspectRatio: 1.6,
+                child: CustomPaint(
+                  foregroundPainter: _OrbitStarPainter(_controller),
+                  child: Center(
+                    child: FractionallySizedBox(
+                      widthFactor: 0.73,
+                      child: Image.asset(
+                        'lib/core/assets/orbit_wordmark.png',
+                        fit: BoxFit.contain,
+                        semanticLabel: 'ORBIT',
                       ),
                     ),
                   ),
-
-                  const Spacer(),
-
-                  // Bottom loading section
-                  FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: Column(
-                      children: [
-                        const Text(
-                          'ENTERING YOUR UNIVERSE',
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 10,
-                            letterSpacing: 3,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        SizedBox(
-                          width: 140,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: TweenAnimationBuilder<double>(
-                              tween: Tween(begin: 0, end: 1),
-                              duration: const Duration(seconds: 3),
-                              builder: (context, value, child) {
-                                return LinearProgressIndicator(
-                                  value: value,
-                                  minHeight: 3,
-                                  backgroundColor: AppColors.cardSoft,
-                                  valueColor: const AlwaysStoppedAnimation(
-                                    AppColors.primaryPink,
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-// Custom orbit ring illustration
-class _OrbitPainter extends CustomPainter {
+class _OrbitStarPainter extends CustomPainter {
+  _OrbitStarPainter(this.animation) : super(repaint: animation);
+
+  final Animation<double> animation;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
+    final center = size.center(Offset.zero);
+    final rx = size.width * 0.44;
+    final ry = size.height * 0.25;
+    const tilt = -0.28;
+    final t = animation.value * 2 * math.pi - math.pi / 4;
 
-    // First orbit
     canvas.save();
     canvas.translate(center.dx, center.dy);
-    canvas.rotate(-math.pi / 4);
-
-    final firstPaint = Paint()
-      ..color = AppColors.primaryPink
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-
+    canvas.rotate(tilt);
     canvas.drawOval(
-      Rect.fromCenter(center: Offset.zero, width: 205, height: 95),
-      firstPaint,
+      Rect.fromCenter(center: Offset.zero, width: rx * 2, height: ry * 2),
+      Paint()
+        ..color = AppColors.primary.withValues(alpha: 0.17)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8,
     );
-
+    final x = rx * math.cos(t);
+    final y = ry * math.sin(t);
     canvas.restore();
 
-    // Second orbit
+    final star =
+        center +
+        Offset(
+          x * math.cos(tilt) - y * math.sin(tilt),
+          x * math.sin(tilt) + y * math.cos(tilt),
+        );
     canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(math.pi / 4);
-
-    final secondPaint = Paint()
-      ..color = AppColors.softLilac.withAlpha(130)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset.zero, width: 190, height: 85),
-      secondPaint,
+    canvas.translate(star.dx, star.dy);
+    final path = Path()
+      ..moveTo(0, -8)
+      ..quadraticBezierTo(1.3, -1.3, 6, 0)
+      ..quadraticBezierTo(1.3, 1.3, 0, 8)
+      ..quadraticBezierTo(-1.3, 1.3, -6, 0)
+      ..quadraticBezierTo(-1.3, -1.3, 0, -8)
+      ..close();
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = AppColors.primary.withValues(alpha: 0.55)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
     );
-
+    canvas.drawPath(path, Paint()..color = const Color(0xFFF2DDFB));
     canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
-  }
+  bool shouldRepaint(covariant _OrbitStarPainter oldDelegate) =>
+      oldDelegate.animation != animation;
 }

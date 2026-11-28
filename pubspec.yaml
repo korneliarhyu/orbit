@@ -1,3 +1,4 @@
+
 name: orbit
 description: "AI Social Universe - ChatApp"
 publish_to: 'none'
@@ -19,31 +20,35 @@ dependencies:
   firebase_auth: ^7.0.0
   cloud_firestore: ^7.1.0
   cloud_functions: ^7.0.0
-  firebase_storage: ^14.0.1
-
   # Local Storage
   shared_preferences: ^2.5.6
 
   # Media
-  image_picker: ^1.2.4
-
   # Device Configuration
   device_info_plus: ^13.3.0
 
   # Icons
-  cupertino_icons: ^2.0.0
-
-# ==========================================
-# DEVELOPMENT DEPENDENCIES
-# ==========================================
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.8
 
 # ==========================================
-# FLUTTER CONFIGURATION
+# APP ICON CONFIGURATION
+# ==========================================
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "build_assets/app_icon.png"
+  adaptive_icon_background: "#1B1924"
+  adaptive_icon_foreground: "build_assets/orbit_icon_foreground.png"
+  adaptive_icon_foreground_inset: 0
+
+# ==========================================
+# FLUTTER RUNTIME ASSETS
 # ==========================================
 flutter:
   uses-material-design: true
@@ -51,3 +56,17 @@ flutter:
   assets:
     - lib/core/assets/
     - lib/core/assets/npc/
+
+# ==========================================
+# NATIVE SPLASH SCREEN
+# ==========================================
+flutter_native_splash:
+  color: "#1B1924"
+
+  android: true
+  ios: false
+  web: false
+
+  android_12:
+    color: "#1B1924"
+    image: build_assets/splash_transparent.png

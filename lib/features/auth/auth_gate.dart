@@ -1,6 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../splash_screen.dart';
+
+import '../../core/utils/orbit_logger.dart';
+
 import '../profile/orbit_profile.dart';
 import '../home_screen.dart';
 import '../profile/profile_setup_screen.dart';
@@ -51,7 +55,7 @@ class _AuthGateState extends State<AuthGate> {
           message.contains('INVALID_REFRESH_TOKEN');
 
       if (invalidSession) {
-        debugPrint('ORBIT: Invalid session, signing out.');
+        OrbitLogger.debug('ORBIT: Invalid session, signing out.');
         if (FirebaseAuth.instance.currentUser?.uid == user.uid) {
           await FirebaseAuth.instance.signOut();
         }
@@ -92,7 +96,7 @@ class _AuthGateState extends State<AuthGate> {
           future: _pageFuture,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              debugPrint('ORBIT GATE ERROR: ${snapshot.error}');
+              OrbitLogger.debug('ORBIT GATE ERROR: ${snapshot.error}');
 
               return _errorScreen('Unable to connect to your universe.', () {
                 setState(() {
@@ -125,10 +129,7 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Widget _loadingScreen() {
-    return const Scaffold(
-      backgroundColor: Color(0xFF0B0718),
-      body: Center(child: CircularProgressIndicator(color: Color(0xFFFF4EB8))),
-    );
+    return const SplashScreen();
   }
 
   Widget _errorScreen(String message, VoidCallback onRetry) {

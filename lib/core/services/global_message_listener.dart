@@ -9,6 +9,7 @@ import '../../features/discover/match_service.dart';
 import '../../features/chat/chat_screen.dart';
 
 import '../utils/message_visibility.dart';
+import '../utils/orbit_logger.dart';
 
 import 'active_conversation_tracker.dart';
 import 'orbit_notification_service.dart';
@@ -243,10 +244,8 @@ class GlobalMessageListener with WidgetsBindingObserver {
     if (navigator == null || !navigator.mounted) return;
 
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute<void>(
-        builder: (_) => ChatScreen(npcId: npcId),
-      ),
-          (route) => route.isFirst,
+      MaterialPageRoute<void>(builder: (_) => ChatScreen(npcId: npcId)),
+      (route) => route.isFirst,
     );
   }
 
@@ -284,7 +283,7 @@ class GlobalMessageListener with WidgetsBindingObserver {
   }
 
   void _logError(String source, Object error) {
-    debugPrint('ORBIT notifications ($source): $error');
+    OrbitLogger.debug('ORBIT notifications ($source): $error');
   }
 
   void dispose() {

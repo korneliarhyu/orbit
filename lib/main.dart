@@ -14,6 +14,7 @@ import 'features/auth/auth_gate.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_colors.dart';
 import 'core/services/global_message_listener.dart';
+import 'core/utils/orbit_logger.dart';
 
 // ==================================================
 // ORBIT - MAIN
@@ -37,13 +38,13 @@ Future<void> main() async {
 Future<void> configureFirebase() async {
   // Release mode always uses Firebase Cloud.
   if (!kDebugMode) {
-    debugPrint('ORBIT Firebase: RELEASE -> CLOUD');
+    OrbitLogger.debug('ORBIT Firebase: RELEASE -> CLOUD');
     return;
   }
 
   // This configuration targets Android devices.
   if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
-    debugPrint('ORBIT Firebase: NON-ANDROID -> CLOUD');
+    OrbitLogger.debug('ORBIT Firebase: NON-ANDROID -> CLOUD');
     return;
   }
 
@@ -54,14 +55,14 @@ Future<void> configureFirebase() async {
 
     final bool isPhysicalDevice = androidInfo.isPhysicalDevice;
 
-    debugPrint('ORBIT Device: ${androidInfo.model}');
+    OrbitLogger.debug('ORBIT Device: ${androidInfo.model}');
 
     // ================================================
     // PHYSICAL ANDROID DEVICE
     // USB DEBUGGING / WIRELESS DEBUGGING
     // ================================================
     if (isPhysicalDevice) {
-      debugPrint('ORBIT Firebase: PHYSICAL DEVICE -> CLOUD');
+      OrbitLogger.debug('ORBIT Firebase: PHYSICAL DEVICE -> CLOUD');
 
       // No emulator configuration needed.
       // Firebase uses its default cloud endpoints.
@@ -71,7 +72,7 @@ Future<void> configureFirebase() async {
     // ================================================
     // ANDROID EMULATOR
     // ================================================
-    debugPrint('ORBIT Firebase: ANDROID EMULATOR -> LOCAL');
+    OrbitLogger.debug('ORBIT Firebase: ANDROID EMULATOR -> LOCAL');
 
     // Android Emulator accesses the host PC
     // using 10.0.2.2.
@@ -87,15 +88,15 @@ Future<void> configureFirebase() async {
     FirebaseFunctions.instanceFor(region: 'asia-southeast1')
         .useFunctionsEmulator(host, 5001);
 
-    debugPrint('ORBIT Firebase: LOCAL EMULATORS CONFIGURED');
+    OrbitLogger.debug('ORBIT Firebase: LOCAL EMULATORS CONFIGURED');
 
-    debugPrint('Auth: $host:9099');
+    OrbitLogger.debug('Auth: $host:9099');
 
-    debugPrint('Firestore: $host:8080');
+    OrbitLogger.debug('Firestore: $host:8080');
 
-    debugPrint('Functions: $host:5001');
+    OrbitLogger.debug('Functions: $host:5001');
   } catch (error) {
-    debugPrint(
+    OrbitLogger.debug(
       'ORBIT Firebase: Device detection/config '
       'failed: $error',
     );

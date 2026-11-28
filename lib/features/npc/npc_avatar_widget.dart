@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/utils/orbit_logger.dart';
+
 // ======================================================
 // ORBIT - NPC AVATAR WIDGET
 // Whole Portrait System
@@ -94,7 +96,7 @@ class _NpcAvatarWidgetState extends State<NpcAvatarWidget> {
       );
     }
 
-    debugPrint('ORBIT NPC: ${files.length} portraits loaded.');
+    OrbitLogger.debug('ORBIT NPC: ${files.length} portraits loaded.');
 
     return files;
   }
@@ -146,7 +148,7 @@ class _NpcAvatarWidgetState extends State<NpcAvatarWidget> {
           filterQuality: FilterQuality.high,
           gaplessPlayback: true,
           errorBuilder: (context, error, stackTrace) {
-            debugPrint('ORBIT NPC IMAGE ERROR: $error');
+            OrbitLogger.debug('ORBIT NPC IMAGE ERROR: $error');
 
             return const Center(
               child: Icon(

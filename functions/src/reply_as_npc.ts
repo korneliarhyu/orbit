@@ -9,6 +9,7 @@ import {
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import OpenAI from "openai";
+import { reserveAiRequest, releaseAiRequest } from "./ai_quota";
 
 import { calculateIntimacy, initialIntimacy } from "./intimacy";
 import {
@@ -237,7 +238,12 @@ async function generateNpcReply(
 
     return { bubbles, signal };
   } catch (error) {
-    console.error("replyAsNpc OpenAI error", error);
+    console.error("ORBIT AI: OpenAI request failed", {
+      errorType: error instanceof Error
+        ? error.name
+        : "UnknownError",
+    });
+
     throw new HttpsError("unavailable", "NPC could not reply right now.");
   }
 }
@@ -296,6 +302,7 @@ export const replyAsNpc = onCall(
     if (acquired === "done") return { busy: false, alreadyReplied: true };
     if (acquired === "busy") return { busy: true };
 
+    let aiReserved = false;
     try {
       const [matchSnapshot, playerSnapshot, recentSnapshot] = await Promise.all([
         matchRef.get(),
@@ -335,6 +342,13 @@ export const replyAsNpc = onCall(
         .join("\n");
       if (!combinedText) {
         throw new HttpsError("invalid-argument", "Empty message batch.");
+      }
+
+      const playerRequestedEnd = isExplicitEndRequest(combinedText);
+      // Deterministic unmatch does not use the AI quota.
+      if (!playerRequestedEnd) {
+        aiReserved = await reserveAiRequest(db, uid, lockId);
+        if (!aiReserved) return { busy: true };
       }
 
       // --------------------------------------------------
@@ -406,7 +420,6 @@ export const replyAsNpc = onCall(
       // NPC reads the pending messages.
       await updateReceipts(true);
 
-      const playerRequestedEnd = isExplicitEndRequest(combinedText);
       const rawScore = (npc.intimacy as { score?: unknown } | undefined)?.score;
       const score = typeof rawScore === "number"
         ? Math.max(0, Math.min(100, rawScore))
@@ -531,6 +544,17 @@ export const replyAsNpc = onCall(
 
       return { busy: false, ...committed };
     } finally {
+      // Release only this invocation's quota lease, even after an AI failure.
+      // The expiration also recovers leases after a hard function timeout.
+      if (aiReserved) {
+        try {
+          await releaseAiRequest(db, uid, lockId);
+        } catch (error) {
+          console.error("ORBIT AI: Failed to release quota lease", {
+            errorType: error instanceof Error ? error.name : "UnknownError",
+          });
+        }
+      }
       // Always release our lock. Do not erase another invocation's lock.
       try {
         await db.runTransaction(async (tx) => {
@@ -540,7 +564,11 @@ export const replyAsNpc = onCall(
           }
         });
       } catch (error) {
-        console.error("replyAsNpc failed to release lock", error);
+        console.error("ORBIT AI: Failed to release reply lock", {
+          errorType: error instanceof Error
+            ? error.name
+            : "UnknownError",
+        });
       }
     }
   },

@@ -4,6 +4,8 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import '../utils/orbit_logger.dart';
+
 // App-scoped reply dispatcher. A ChatScreen does not own its timers.
 class AiService extends ChangeNotifier {
   AiService._() {
@@ -107,6 +109,14 @@ class AiService extends ChangeNotifier {
       }
     } catch (error) {
       if (!_isCurrent(npcId, room)) return;
+      final details = error is FirebaseFunctionsException
+          ? error.details
+          : null;
+      final quotaBlocked =
+          error is FirebaseFunctionsException &&
+          error.code == 'resource-exhausted' &&
+          details is Map &&
+          const {'ai_daily_quota', 'ai_rate_limit'}.contains(details['reason']);
       final retryable =
           error is FirebaseFunctionsException &&
           const {
@@ -114,7 +124,12 @@ class AiService extends ChangeNotifier {
             'deadline-exceeded',
             'aborted',
           }.contains(error.code);
-      if (retryable && room.errorRetries < _maxErrorRetries) {
+      if (quotaBlocked) {
+        // Do not retry a quota rejection or immediately dispatch a newer
+        // queued trigger in this room. Messages remain stored in Firestore.
+        room.pendingMessageId = null;
+        failure = error;
+      } else if (retryable && room.errorRetries < _maxErrorRetries) {
         room.errorRetries++;
         room.pendingMessageId ??= messageId;
         nextDelay = Duration(seconds: 1 << room.errorRetries);
@@ -126,7 +141,7 @@ class AiService extends ChangeNotifier {
       if (_isCurrent(npcId, room)) {
         room.activeMessageId = null;
         if (failure != null) {
-          debugPrint('ORBIT NPC reply ($npcId): $failure');
+          OrbitLogger.debug('ORBIT NPC reply ($npcId): $failure');
           _failures.add(NpcReplyFailure(room.uid, npcId, failure));
           room.busyRetries = 0;
           room.errorRetries = 0;

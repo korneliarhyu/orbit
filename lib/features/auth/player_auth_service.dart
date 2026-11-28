@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../core/utils/orbit_logger.dart';
+
 class PlayerAuthService {
   PlayerAuthService._();
 
@@ -47,9 +49,9 @@ class PlayerAuthService {
     if (user != null) {
       try {
         await user.updateDisplayName(username.trim());
-        debugPrint('[AUTH] Display name updated');
+        OrbitLogger.debug('[AUTH] Display name updated');
       } catch (e) {
-        debugPrint('[AUTH] Display name update failed: $e');
+        OrbitLogger.debug('[AUTH] Display name update failed: $e');
       }
     }
 
@@ -83,20 +85,23 @@ class PlayerAuthService {
     try {
       final result = await operation();
 
-      debugPrint('[AUTH][$action] SUCCESS');
+      OrbitLogger.debug('[AUTH][$action] SUCCESS');
 
       return result;
     } on FirebaseAuthException catch (e) {
-      debugPrint('[AUTH][$action] FAILED: ${e.code}');
+      OrbitLogger.debug('[AUTH][$action] FAILED: ${e.code}');
 
       if (kDebugMode) {
-        debugPrint('[AUTH][$action] ${e.message}');
+        OrbitLogger.debug('[AUTH][$action] ${e.message}');
       }
 
       rethrow;
     } catch (e, stackTrace) {
-      debugPrint('[AUTH][$action] UNEXPECTED: $e');
-      debugPrintStack(stackTrace: stackTrace);
+      OrbitLogger.debug('[AUTH][$action] UNEXPECTED: $e');
+      OrbitLogger.error(
+        'Unexpected authentication error',
+        stackTrace: stackTrace,
+      );
 
       rethrow;
     }

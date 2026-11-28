@@ -65,3 +65,22 @@ functions/.env*
 
 # Firebase local credentials
 functions/.runtimeconfig.json
+
+# =========================
+# ANDROID SIGNING SECRETS
+# =========================
+*.jks
+*.keystore
+*.p12
+android/key.properties
+
+# =========================
+# PRIVATE CREDENTIALS
+# =========================
+*serviceAccount*.json
+*service-account*.json
+*firebase-adminsdk*.json
+
+# Firebase emulator data
+emulator-data/
+firebase-export-*/
